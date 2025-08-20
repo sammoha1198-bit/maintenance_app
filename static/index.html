@@ -2,196 +2,289 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="x-ua-compatible" content="ie=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>منصة الصيانة | الصرف / التوريد / التأهيل</title>
+  <title>نظام السامي لإدارة الصرف والتأهيل</title>
 
-  <!-- ألوان وخطوط أساسية لطابعٍ ساطع (يمكنك تخصيصها في style.css) -->
-  <link rel="stylesheet" href="/static/style.css?v=20250820" />
 
-  <!-- مكتبة الرسوم البيانية (يجب أن تسبق app.js) -->
+  <!-- خطوط + تنسيقات -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=3" />
+
+  <!-- مكتبة الرسوم + سكريبت الواجهة -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <style>
-    /* لمسات سريعة لضمان مظهرٍ ساطع حتى لو لم تُحمَّل style.css */
-    :root{
-      --bg:#f7fafc; --card:#ffffff; --primary:#2563eb; --accent:#06b6d4;
-      --muted:#6b7280; --danger:#ef4444; --ok:#22c55e; --shadow:0 10px 25px rgba(2,6,23,.08);
-      --radius:16px;
-    }
-    html,body{height:100%}
-    body{
-      margin:0; background:linear-gradient(135deg,#fdfbff,#eef7ff);
-      font-family: "Cairo", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:#0f172a;
-    }
-    .container{max-width:1200px;margin-inline:auto;padding:16px}
-    header{
-      background: linear-gradient(135deg, var(--primary), var(--accent));
-      color:white; padding:18px 16px; border-radius: var(--radius);
-      box-shadow: var(--shadow); margin:16px 0;
-    }
-    header h1{margin:0 0 6px 0; font-size:1.5rem}
-    header .sub{opacity:.9; font-size:.95rem}
-
-    .grid{display:grid; gap:16px}
-    @media(min-width:900px){ .grid-3{grid-template-columns: repeat(3,1fr);} }
-    @media(min-width:700px){ .grid-2{grid-template-columns: repeat(2,1fr);} }
-
-    .panel{
-      background:var(--card); border:1px solid #e5e7eb; border-radius:var(--radius);
-      box-shadow: var(--shadow); padding:16px;
-    }
-    .panel-lite{
-      background:#f8fafc; border:1px dashed #d1d5db; border-radius:12px; padding:12px;
-    }
-    .muted{ color: var(--muted); }
-
-    .btn{
-      border:none; cursor:pointer; padding:12px 16px; border-radius:12px;
-      background:var(--primary); color:white; font-weight:700; box-shadow: var(--shadow);
-      transition: transform .06s ease, opacity .2s ease, filter .2s ease;
-    }
-    .btn:hover{ transform: translateY(-1px); filter: brightness(1.05); }
-    .btn:disabled{ opacity:.6; cursor:not-allowed; }
-    .btn.ghost{ background:#e5e7eb; color:#0f172a; }
-    .btn.accent{ background: var(--accent); color:#002e3a; }
-    .btn.danger{ background: var(--danger); }
-    .chip{
-      display:inline-flex; align-items:center; gap:8px;
-      padding:12px 14px; border-radius:14px; background:#e0f2fe; color:#0c4a6e;
-      border:1px solid #bae6fd; font-weight:700; cursor:pointer;
-      box-shadow: var(--shadow);
-    }
-    .chip:hover{ filter: brightness(1.03); }
-    .row{display:flex; flex-wrap:wrap; align-items:center; gap:10px}
-    input[type="number"], input[type="text"]{
-      padding:10px 12px; border-radius:10px; border:1px solid #d1d5db; background:white;
-      min-width:120px;
-    }
-    .section-title{font-weight:800; margin:0 0 10px 0}
-    .cards{display:grid; gap:12px}
-    @media(min-width:900px){ .cards-3{grid-template-columns: repeat(3,1fr);} }
-
-    canvas{ display:block; width:100%; height:320px; }
-    [hidden]{ display:none !important; }
-    footer{ color:#64748b; font-size:.85rem; text-align:center; margin:24px 0 16px }
-  </style>
+  <script defer src="/static/app.js?v=3"></script>
 </head>
-
 <body>
-  <div class="container">
+  <header>
+   <h1>نظام السامي لإدارة الصرف والتأهيل</h1>
 
-    <!-- شريط علوي -->
-    <header>
-      <h1>منصة الصيانة</h1>
-      <div class="sub">الصرف/الطارئ • التوريد/التأهيل • التقارير والرسوم البيانية</div>
-    </header>
+    <p>إدخال بيانات — تقارير Excel — ملخصات — رسوم بيانية شهرية</p>
+  </header>
 
-    <!-- بطاقات الوصول السريع -->
-    <div class="grid grid-2" id="panel-home" data-panel>
-      <div class="panel">
-        <div class="section-title">القائمة الرئيسية</div>
-        <div class="grid grid-2">
-          <button id="open-issue" class="chip" style="font-size:1.05rem">
-            <span>🧾</span><span>الصرف/الطارئ</span>
-          </button>
-          <button id="open-qual" class="chip" style="font-size:1.05rem">
-            <span>🛠️</span><span>توريد/تأهيل</span>
-          </button>
+  <main>
+    <!-- الأيقونات الرئيسية: تُظهر/تُخفي اللوحات -->
+    <section class="tiles">
+      <button class="tile" id="tile-issue">الصرف / طارئ</button>
+      <button class="tile" id="tile-rehab">توريد / تأهيل</button>
+    </section>
+
+    <!-- ===== لوحة الصرف (مخفية افتراضيًا) ===== -->
+    <section id="panel-issue" class="panel hidden">
+      <h2>الصرف / الطارئ</h2>
+      <form id="form-issue" class="grid">
+        <label>اسم القطعة<input name="item_name" required /></label>
+        <label>المودل<input name="model" /></label>
+        <label>الرقم التسلسلي<input name="serial" /></label>
+        <label>الحالة
+          <select name="status">
+            <option>مؤهلة</option>
+            <option>جديدة</option>
+          </select>
+        </label>
+        <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
+        <label>الموقع<input name="location" /></label>
+        <label>جهة الطلب<input name="requester" /></label>
+        <label>تاريخ الصرف<input type="date" name="issue_date" required /></label>
+        <label>المؤهل<input name="qualified_by" /></label>
+        <label>المستلم<input name="receiver" /></label>
+        <div class="row">
+          <button type="submit">حفظ</button>
+          <button type="button" id="btn-issue-full">تقرير Excel كامل</button>
+          <button type="button" id="btn-issue-summary">تقرير ملخص</button>
         </div>
-        <div class="panel-lite" style="margin-top:12px">
-          استخدم الأزرار بالأعلى للدخول إلى واجهة الصرف أو واجهة التأهيل والرسوم.
+      </form>
+      <div id="list-issue" class="list"></div>
+    </section>
+
+    <!-- ===== لوحة التأهيل (مخفية افتراضيًا) ===== -->
+    <section id="panel-rehab" class="panel hidden">
+      <h2>التأهيلات</h2>
+
+      <!-- أزرار فرعية -->
+      <div class="subtiles">
+        <button class="subtile" id="sub-cab">الكبائن</button>
+        <button class="subtile" id="sub-ast">الأصول</button>
+        <button class="subtile" id="sub-spa">قطع الغيار</button>
+        <button class="subtile" id="btn-dup">فحص التكرارات</button>
+      </div>
+
+      <!-- ===== الكبائن ===== -->
+      <div id="block-cab" class="block hidden">
+        <h3>الكبائن</h3>
+
+        <!-- بحث/تعديل بالترميز -->
+        <div class="panel-lite">
+          <h4>بحث/تعديل</h4>
+          <div class="row">
+            <input id="cab-find-code" placeholder="أدخل الترميز (code)" />
+            <button id="cab-find-btn">بحث</button>
+            <button id="cab-clear-btn" class="ghost">مسح</button>
+          </div>
+          <small id="cab-find-hint" class="muted"></small>
         </div>
-      </div>
 
-      <div class="panel">
-        <div class="section-title">ملخّص سريع</div>
-        <div id="banner-container">
-          <div class="panel-lite muted">اختر الشهر والسنة من داخل واجهة “توريد/تأهيل” ثم اضغط <b>تحديث الرسوم</b> لإظهار الرسومات.</div>
+        <form id="form-cab" class="grid">
+          <input type="hidden" id="cab-id" name="id" />
+          <label>نوع الكبينة
+            <select name="cabinet_type">
+              <option>ATS</option>
+              <option>AMF</option>
+              <option>HYBRID</option>
+              <option>حماية انفرتر</option>
+              <option>ظفيرة تحكم</option>
+            </select>
+          </label>
+          <label>الترميز<input name="code" /></label>
+          <label>تاريخ التأهيل<input type="date" name="rehab_date" required /></label>
+          <label>المؤهل<input name="qualified_by" /></label>
+          <label>الموقع<input name="location" /></label>
+          <label>المستلم<input name="receiver" /></label>
+          <label>تاريخ الصرف<input type="date" name="issue_date" /></label>
+          <label>ملاحظات<textarea name="notes"></textarea></label>
+          <div class="row">
+            <button type="submit">حفظ (إضافة)</button>
+            <button type="button" id="btn-cab-update">تحديث السجل</button>
+          </div>
+        </form>
+
+        <!-- تصدير شهر حتى تاريخه -->
+        <div class="row">
+          <label>شهر <input id="cab-month" type="number" min="1" max="12" /></label>
+          <label>سنة <input id="cab-year" type="number" /></label>
+          <button id="btn-cab-export">تصدير Excel (حتى اليوم)</button>
         </div>
-      </div>
-    </div>
 
-    <!-- واجهة الصرف/الطارئ -->
-    <div id="panel-issue" data-panel hidden class="panel">
-      <div class="row" style="justify-content:space-between; margin-bottom:12px">
-        <div class="section-title" style="margin:0">الصرف / الطارئ</div>
-        <button id="back-home" class="btn ghost">الرجوع</button>
+        <div class="chartwrap"><canvas id="chart-cab"></canvas></div>
+        <div id="list-cab" class="list"></div>
       </div>
 
-      <div class="panel-lite" style="margin-bottom:12px">
-        يمكنك توليد تقارير الصرف الكاملة أو الملخّصة مباشرةً.
-      </div>
+      <!-- ===== الأصول ===== -->
+      <div id="block-ast" class="block hidden">
+        <h3>الأصول</h3>
 
-      <div class="row" style="gap:12px; margin-bottom:8px">
-        <button id="btnIssueFull" class="btn">تقرير الصرف كامل</button>
-        <button id="btnIssueSummary" class="btn accent">تقرير الصرف الملخّص</button>
-      </div>
-    </div>
-
-    <!-- واجهة التوريد/التأهيل -->
-    <div id="panel-qual" data-panel hidden class="panel">
-      <div class="row" style="justify-content:space-between; margin-bottom:12px">
-        <div class="section-title" style="margin:0">توريد / تأهيل</div>
-        <button id="back-home-2" class="btn ghost">الرجوع</button>
-      </div>
-
-      <!-- اختيار الفترة وأزرار الملخص -->
-      <div class="row" style="margin-bottom:12px">
-        <input id="year"  type="number" placeholder="السنة" min="2000" />
-        <input id="month" type="number" placeholder="الشهر" min="1" max="12" />
-        <button id="btnUpdateCharts" class="btn">تحديث الرسوم</button>
-        <button id="btnMonthlySummary" class="btn accent">توليد ملخص شهري</button>
-        <button id="btnQuarterlySummary" class="btn">توليد ملخص ربع سنوي</button>
-      </div>
-
-      <!-- تبويبات فرعية -->
-      <div class="row" style="gap:8px; margin-bottom:10px">
-        <button id="open-cab" class="chip"><span>📦</span><span>الكبائن</span></button>
-        <button id="open-assets" class="chip"><span>🏭</span><span>الأصول</span></button>
-        <button id="open-spares" class="chip"><span>🧩</span><span>قطع الغيار</span></button>
-      </div>
-
-      <!-- لوحات الرسوم -->
-      <div id="panel-cab" data-panel hidden class="panel-lite">
-        <div class="section-title">الرسوم — الكبائن</div>
-        <canvas id="cabPie"></canvas>
-        <!-- بحث بالترميز (اختياري) -->
-        <div class="row" style="margin-top:12px">
-          <input id="searchCode" type="text" placeholder="البحث بالترميز" />
-          <button id="btnFindCabinet" class="btn ghost">بحث الترميز</button>
+        <!-- بحث/تعديل بالرقم التسلسلي/الترميز -->
+        <div class="panel-lite">
+          <h4>بحث/تعديل</h4>
+          <div class="row">
+            <input id="ast-find-serial" placeholder="أدخل الرقم التسلسلي/الترميز" />
+            <button id="ast-find-btn">بحث</button>
+            <button id="ast-clear-btn" class="ghost">مسح</button>
+          </div>
+          <small id="ast-find-hint" class="muted"></small>
         </div>
-        <div id="searchResultCab" style="margin-top:8px"></div>
-      </div>
 
-      <div id="panel-assets" data-panel hidden class="panel-lite">
-        <div class="section-title">الرسوم — الأصول</div>
-        <canvas id="assetsBar"></canvas>
-        <!-- بحث برقم تسلسلي (اختياري) -->
-        <div class="row" style="margin-top:12px">
-          <input id="searchSerialAsset" type="text" placeholder="البحث بالرقم التسلسلي (الأصول)" />
-          <button id="btnFindAsset" class="btn ghost">بحث الأصل</button>
+        <form id="form-ast" class="grid">
+          <input type="hidden" id="ast-id" name="id" />
+          <label>نوع الأصل
+            <select name="asset_type">
+              <option>بطاريات</option>
+              <option>موحدات</option>
+              <option>محركات</option>
+              <option>مولدات</option>
+              <option>مكيفات</option>
+              <option>أصول أخرى</option>
+            </select>
+          </label>
+          <label>المودل<input name="model" /></label>
+          <label>الرقم التسلسلي/الترميز<input name="serial_or_code" /></label>
+          <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
+          <label>الموقع السابق<input name="prev_location" /></label>
+          <label>تاريخ التوريد<input type="date" name="supply_date" required /></label>
+          <label>المؤهل<input name="qualified_by" /></label>
+          <label>الرفع
+            <select name="lifted">
+              <option value="">—</option>
+              <option value="true">نعم</option>
+              <option value="false">لا</option>
+            </select>
+          </label>
+          <label>الفاحص<input name="inspector" /></label>
+          <label>الفحص
+            <select name="tested">
+              <option value="">—</option>
+              <option value="true">نعم</option>
+              <option value="false">لا</option>
+            </select>
+          </label>
+          <label>تاريخ الصرف<input type="date" name="issue_date" /></label>
+          <label>الموقع الحالي<input name="current_location" /></label>
+          <label>جهة الطلب<input name="requester" /></label>
+          <label>المستلم<input name="receiver" /></label>
+          <label>ملاحظات<textarea name="notes"></textarea></label>
+          <div class="row">
+            <button type="submit">حفظ (إضافة)</button>
+            <button type="button" id="btn-ast-update">تحديث السجل</button>
+          </div>
+        </form>
+
+        <!-- تصدير شهر حتى تاريخه -->
+        <div class="row">
+          <label>شهر <input id="ast-month" type="number" min="1" max="12" /></label>
+          <label>سنة <input id="ast-year" type="number" /></label>
+          <button id="btn-ast-export">تصدير Excel (حتى اليوم)</button>
         </div>
-        <div id="searchResultAsset" style="margin-top:8px"></div>
+
+        <div class="chartwrap"><canvas id="chart-ast"></canvas></div>
+        <div id="list-ast" class="list"></div>
       </div>
 
-      <div id="panel-spares" data-panel hidden class="panel-lite">
-        <div class="section-title">الرسوم — قطع الغيار</div>
-        <canvas id="sparesBar"></canvas>
-        <!-- بحث برقم تسلسلي (اختياري) -->
-        <div class="row" style="margin-top:12px">
-          <input id="searchSerialSpare" type="text" placeholder="البحث بالرقم التسلسلي (القطعة)" />
-          <button id="btnFindSpare" class="btn ghost">بحث القطعة</button>
+      <!-- ===== قطع الغيار ===== -->
+      <div id="block-spa" class="block hidden">
+        <h3>قطع الغيار</h3>
+
+        <!-- بحث/تعديل بالرقم التسلسلي (إن وُجد) -->
+        <div class="panel-lite">
+          <h4>بحث/تعديل</h4>
+          <div class="row">
+            <input id="spa-find-serial" placeholder="أدخل الرقم التسلسلي (إن وُجد)" />
+            <button id="spa-find-btn">بحث</button>
+            <button id="spa-clear-btn" class="ghost">مسح</button>
+          </div>
+          <small id="spa-find-hint" class="muted"></small>
         </div>
-        <div id="searchResultSpare" style="margin-top:8px"></div>
+
+        <form id="form-spa" class="grid">
+          <input type="hidden" id="spa-id" name="id" />
+          <label>نوع القطعة
+            <select name="part_category">
+              <option>مضخات الديزل</option>
+              <option>النوزلات</option>
+              <option>سلف</option>
+              <option>دينمو شحن</option>
+              <option>كروت وشواحن</option>
+              <option>موديولات</option>
+              <option>منظمات وانفرترات</option>
+              <option>تسييخ</option>
+              <option>أخرى</option>
+            </select>
+          </label>
+          <label>اسم القطعة<input name="part_name" /></label>
+          <label>موديل القطعة<input name="part_model" /></label>
+          <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
+          <label>الرقم التسلسلي<input name="serial" /></label>
+          <label>المصدر<input name="source" /></label>
+          <label>المؤهل<input name="qualified_by" /></label>
+          <label>تاريخ التأهيل<input type="date" name="rehab_date" required /></label>
+          <label>الفحص
+            <select name="tested">
+              <option value="">—</option>
+              <option value="true">نعم</option>
+              <option value="false">لا</option>
+            </select>
+          </label>
+          <label>ملاحظات<textarea name="notes"></textarea></label>
+          <div class="row">
+            <button type="submit">حفظ (إضافة)</button>
+            <button type="button" id="btn-spa-update">تحديث السجل</button>
+          </div>
+        </form>
+
+        <!-- تصدير شهر حتى تاريخه -->
+        <div class="row">
+          <label>شهر <input id="spa-month" type="number" min="1" max="12" /></label>
+          <label>سنة <input id="spa-year" type="number" /></label>
+          <button id="btn-spa-export">تصدير Excel (حتى اليوم)</button>
+        </div>
+
+        <div class="chartwrap"><canvas id="chart-spa"></canvas></div>
+        <div id="list-spa" class="list"></div>
       </div>
-    </div>
+    </section>
 
-    <footer>© منصة الصيانة — عرض بيانات التوريد والتأهيل والصرف ورسومها</footer>
-  </div>
+    <!-- ===== الملخصات (تبقى ظاهرة) ===== -->
+    <section id="panel-summaries" class="panel">
+      <h2>الملخصات (Excel)</h2>
+      <div class="row">
+        <label>شهر <input id="sum-month" type="number" min="1" max="12" value="6" /></label>
+        <label>سنة <input id="sum-year" type="number" value="2025" /></label>
+        <button id="btn-monthly">توليد ملخص شهري</button>
+      </div>
+      <div class="row">
+        <label>بداية الربع (شهر) <input id="q-month" type="number" min="1" max="12" value="4" /></label>
+        <label>سنة <input id="q-year" type="number" value="2025" /></label>
+        <button id="btn-quarterly">توليد ملخص ربع سنوي</button>
+      </div>
+    </section>
 
-  <!-- تطبيق الواجهة (مع كسر كاش و defer لضمان التنفيذ بعد البناء) -->
-  <script src="/static/app.js?v=20250820" defer></script>
+    <!-- ===== الرسوم الشهرية ===== -->
+    <section id="panel-charts" class="panel">
+      <h2>الرسوم الشهرية</h2>
+      <div class="row">
+        <label>شهر <input id="chart-month" type="number" min="1" max="12" value="6" /></label>
+        <label>سنة <input id="chart-year" type="number" value="2025" /></label>
+        <button id="btn-refresh-charts">تحديث الرسوم</button>
+      </div>
+      <div class="charts-grid">
+        <div><h3>الكبائن (Pie)</h3><canvas id="viz-cab"></canvas></div>
+        <div><h3>الأصول (Bar)</h3><canvas id="viz-ast"></canvas></div>
+        <div><h3>قطع الغيار (Bar)</h3><canvas id="viz-spa"></canvas></div>
+      </div>
+    </section>
+  </main>
+
+<footer><small>© نظام السامي لإدارة الصرف والتأهيل</small></footer>
+<script src="/static/app.js?v=20250820" defer></script>
 </body>
 </html>
+

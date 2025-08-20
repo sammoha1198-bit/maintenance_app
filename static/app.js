@@ -1,512 +1,389 @@
-/* =========================
-   app.js — Maintenance App
-   ========================= */
+/* =========================================================================
+   maintenance_app - front-end bootstrap
+   - Works on localhost and Render (relative API base)
+   - Robust button binding (by ID or Arabic label)
+   - Safe fetch wrappers with clear console errors
+   - Charts: destroys old instances to avoid stretching/overlap
+   - Fixed canvas heights; responsive width
+   - Exports: monthly, quarterly, issue full/summary
+   ======================================================================== */
 
 "use strict";
 
-/* ----------- Config ----------- */
-const API_BASE = ""; // relative base: works locally and on Render
+/* ----------------------------- Config ---------------------------------- */
+// Always call the same origin the page is served from.
+const API_BASE = "";
 
-/* --------- Helpers ---------- */
-async function fetchJSON(path) {
+/* --------------------------- Utilities --------------------------------- */
+const qs  = (sel, el = document) => el.querySelector(sel);
+const qsa = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+
+function log(...args)   { console.log("[app]", ...args); }
+function warn(...args)  { console.warn("[app]", ...args); }
+function error(...args) { console.error("[app]", ...args); }
+
+async function getJSON(url) {
   try {
-    const res = await fetch(`${API_BASE}${path}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    return await res.json();
-  } catch (err) {
-    console.error("fetchJSON failed:", path, err);
+    const r = await fetch(url, { credentials: "same-origin" });
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
+    return await r.json();
+  } catch (e) {
+    error("GET failed:", url, e);
     return null;
   }
 }
 
-async function sendJSON(path, method, body) {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(body),
-    });
-    const txt = await res.text();
-    let data = null;
-    try { data = txt ? JSON.parse(txt) : null; } catch {}
-    if (!res.ok) throw new Error(data?.detail || txt || `HTTP ${res.status}`);
-    return data;
-  } catch (err) {
-    console.error(`${method} ${path} failed`, err);
-    alert(err.message || "حدث خطأ في الطلب");
-    return null;
+function download(url) {
+  // Using same window is more reliable with some blockers
+  window.location.href = url;
+}
+
+function bindClickByIdOrText(id, containsText, handler) {
+  let el = id ? qs(`#${id}`) : null;
+  if (!el && containsText) {
+    el = qsa("button, a, .btn").find(b => (b.textContent || "").trim().includes(containsText));
+  }
+  if (el) {
+    el.addEventListener("click", ev => { ev.preventDefault?.(); handler(); });
+    log("bound:", id || containsText);
+  } else {
+    warn("button not found:", id || containsText);
   }
 }
 
-function downloadFile(url) {
-  // trigger a file download without leaving the page
-  const a = document.createElement("a");
-  a.href = `${API_BASE}${url}`;
-  a.target = "_blank";
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-function parseIntSafe(v, def = 0) {
+function int(v, def) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : def;
 }
 
-function sumValues(obj) {
-  return Object.values(obj || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+/* ---------------------------- Date inputs ------------------------------ */
+function getYearMonth() {
+  const yEl = qs("#year")  || qs('[name="year"]');
+  const mEl = qs("#month") || qs('[name="month"]');
+  const now = new Date();
+  const year  = int(yEl?.value ?? now.getFullYear(), now.getFullYear());
+  const month = int(mEl?.value ?? (now.getMonth() + 1), now.getMonth() + 1); // 1..12
+  return { year, month };
 }
 
-/* ----- Draw "empty" message on a canvas (when no data) ----- */
-function drawEmptyMessageOnCanvas(canvasId, message = "لا توجد بيانات لهذا الشهر") {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  // clear
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // draw message, center-ish
-  ctx.save();
-  ctx.fillStyle = "#999";
-  ctx.font = "16px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const x = canvas.width / 2;
-  const y = canvas.height / 2;
-  ctx.fillText(message, x, y);
-  ctx.restore();
+/* --------------------------- Charts setup ------------------------------ */
+// We support Chart.js if present; otherwise show minimal text.
+let CHARTS = { cab: null, ast: null, spa: null };
+
+function fixedCanvas(el, height = 320) {
+  if (!el) return null;
+  // Ensure a fixed height to prevent vertical stretching
+  el.style.width = "100%";
+  el.style.height = `${height}px`;
+  // For Chart.js, set attribute height too
+  if (!el.getAttribute("height")) el.setAttribute("height", String(height));
+  return el.getContext ? el : null;
 }
 
-/* ---------- Charts (Chart.js) ---------- */
-const charts = {
-  cabinets: null,
-  assets: null,
-  spares: null,
-};
-
-function destroyChart(key) {
-  if (charts[key]) {
-    try { charts[key].destroy(); } catch {}
-    charts[key] = null;
+function destroyChart(slot) {
+  if (CHARTS[slot] && typeof CHARTS[slot].destroy === "function") {
+    CHARTS[slot].destroy();
   }
+  CHARTS[slot] = null;
 }
 
-function makePieChart(canvasId, labels, values, title) {
-  const ctx = document.getElementById(canvasId)?.getContext("2d");
-  if (!ctx) return null;
-  return new Chart(ctx, {
+function hasData(obj) {
+  if (!obj) return false;
+  const vals = Object.values(obj).map(v => Number(v || 0));
+  return vals.some(n => n > 0);
+}
+
+/* ---------- Render Cabinets (Pie) ---------- */
+function renderCabinetsPie(dataObj) {
+  const canvas =
+    qs("#cabPie") || qs("#cabinetPie") || qs("#chartCabinets") || qs('canvas[data-chart="cabinets"]');
+  if (!canvas) { warn("cabinet pie canvas not found"); return; }
+  fixedCanvas(canvas, 320);
+  destroyChart("cab");
+
+  const labels = ["ATS", "AMF", "HYBRID", "حماية انفرتر", "ظفيرة تحكم"];
+  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
+
+  if (!window.Chart) {
+    // fallback: show text
+    canvas.replaceWith(textFallback("الكبائن", labels, dataset));
+    return;
+  }
+
+  CHARTS.cab = new Chart(canvas.getContext("2d"), {
     type: "pie",
-    data: { labels, datasets: [{ data: values }] },
+    data: {
+      labels,
+      datasets: [{
+        data: dataset
+      }]
+    },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: { display: true, position: "bottom" },
-        title: { display: !!title, text: title },
-      },
-      animation: { duration: 300 },
-    },
+      maintainAspectRatio: false,
+      animation: { duration: 600 }
+    }
   });
 }
 
-function makeBarChart(canvasId, labels, values, title) {
-  const ctx = document.getElementById(canvasId)?.getContext("2d");
-  if (!ctx) return null;
-  return new Chart(ctx, {
+/* ---------- Render Assets (Bar) ---------- */
+function renderAssetsBar(dataObj) {
+  const canvas =
+    qs("#assetsBar") || qs("#chartAssets") || qs('canvas[data-chart="assets"]');
+  if (!canvas) { warn("assets bar canvas not found"); return; }
+  fixedCanvas(canvas, 320);
+  destroyChart("ast");
+
+  const labels = ["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"];
+  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
+
+  if (!window.Chart) {
+    canvas.replaceWith(textFallback("الأصول", labels, dataset));
+    return;
+  }
+
+  CHARTS.ast = new Chart(canvas.getContext("2d"), {
     type: "bar",
     data: {
       labels,
-      datasets: [{ data: values }]
+      datasets: [{ label: "عدد", data: dataset }]
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: { display: false },
-        title: { display: !!title, text: title }
-      },
-      animation: { duration: 300 },
+      maintainAspectRatio: false,
+      animation: { duration: 600 },
       scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } }
+        y: { beginAtZero: true, suggestedMax: Math.max(5, Math.max(...dataset) + 1) }
       }
     }
   });
 }
 
-/* ---------- Month/Year controls ---------- */
-function getSelectedYearMonth() {
-  const yearEl = document.getElementById("year");
-  const monthEl = document.getElementById("month");
-  const year = parseIntSafe(yearEl?.value, new Date().getFullYear());
-  const month = parseIntSafe(monthEl?.value, new Date().getMonth() + 1);
-  return { year, month };
+/* ---------- Render Spares (Bar) ---------- */
+function renderSparesBar(dataObj) {
+  const canvas =
+    qs("#sparesBar") || qs("#chartSpares") || qs('canvas[data-chart="spares"]');
+  if (!canvas) { warn("spares bar canvas not found"); return; }
+  fixedCanvas(canvas, 320);
+  destroyChart("spa");
+
+  const labels = ["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"];
+  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
+
+  if (!window.Chart) {
+    canvas.replaceWith(textFallback("قطع الغيار", labels, dataset));
+    return;
+  }
+
+  CHARTS.spa = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ label: "عدد", data: dataset }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600 },
+      scales: {
+        y: { beginAtZero: true, suggestedMax: Math.max(5, Math.max(...dataset) + 1) }
+      }
+    }
+  });
 }
 
-/* ---------- Charts updater ---------- */
+/* ---------- Text fallback (no Chart.js) ---------- */
+function textFallback(title, labels, values) {
+  const wrap = document.createElement("div");
+  wrap.className = "panel-lite";
+  const has = values.some(v => Number(v) > 0);
+  wrap.innerHTML = `
+    <div style="padding:10px">
+      <div style="font-weight:700;margin-bottom:8px">${title}</div>
+      ${has
+        ? `<ul style="list-style:disc;padding-inline-start:20px;margin:0">
+             ${labels.map((l,i)=>`<li>${l}: ${values[i]}</li>`).join("")}
+           </ul>`
+        : `<div class="muted">لا توجد بيانات لهذا الشهر</div>`}
+    </div>`;
+  return wrap;
+}
+
+/* ----------------------- Update Charts Flow ---------------------------- */
 async function updateCharts() {
-  const { year, month } = getSelectedYearMonth();
+  const { year, month } = getYearMonth();
+  log("update charts for", { year, month });
 
-  // Cabinets
-  const cab = await fetchJSON(`/api/stats/cabinets?year=${year}&month=${month}`);
-  if (cab && sumValues(cab) > 0) {
-    destroyChart("cabinets");
-    charts.cabinets = makePieChart(
-      "cabinetChart",
-      Object.keys(cab),
-      Object.values(cab),
-      "نِسَب إنجاز الكبائن"
-    );
+  // Disable all buttons while loading to prevent double-press
+  setButtonsDisabled(true);
+
+  const [cab, ast, spa] = await Promise.all([
+    getJSON(`${API_BASE}/api/stats/cabinets?year=${year}&month=${month}`),
+    getJSON(`${API_BASE}/api/stats/assets?year=${year}&month=${month}`),
+    getJSON(`${API_BASE}/api/stats/spares?year=${year}&month=${month}`)
+  ]);
+
+  // Render
+  renderCabinetsPie(cab);
+  renderAssetsBar(ast);
+  renderSparesBar(spa);
+
+  // Show simple “no data” banners if everything is zero
+  if (!hasData(cab) && !hasData(ast) && !hasData(spa)) {
+    infoBanner("لا توجد بيانات لهذا الشهر. أضف سجلات ثم اضغط (تحديث الرسوم).");
   } else {
-    destroyChart("cabinets");
-    drawEmptyMessageOnCanvas("cabinetChart");
+    clearBanner();
   }
 
-  // Assets
-  const ast = await fetchJSON(`/api/stats/assets?year=${year}&month=${month}`);
-  if (ast && sumValues(ast) > 0) {
-    destroyChart("assets");
-    charts.assets = makeBarChart(
-      "assetChart",
-      Object.keys(ast),
-      Object.values(ast),
-      "الأصول المؤهلة"
-    );
-  } else {
-    destroyChart("assets");
-    drawEmptyMessageOnCanvas("assetChart");
+  setButtonsDisabled(false);
+}
+
+/* --------------------------- Exports ----------------------------------- */
+function exportMonthly() {
+  const { year, month } = getYearMonth();
+  download(`${API_BASE}/api/export/monthly_summary.xlsx?year=${year}&month=${month}`);
+}
+function exportQuarterly() {
+  const { year, month } = getYearMonth();
+  download(`${API_BASE}/api/export/quarterly_summary.xlsx?start_year=${year}&start_month=${month}`);
+}
+function exportIssueFull()    { download(`${API_BASE}/api/export/issue/full.xlsx`); }
+function exportIssueSummary() { download(`${API_BASE}/api/export/issue/summary.xlsx`); }
+
+// Optional: per-section exports if you added buttons for them
+function exportCabinetsMonth() {
+  const { year, month } = getYearMonth();
+  download(`${API_BASE}/api/export/cabinets.xlsx?year=${year}&month=${month}`);
+}
+function exportAssetsMonth() {
+  const { year, month } = getYearMonth();
+  download(`${API_BASE}/api/export/assets.xlsx?year=${year}&month=${month}`);
+}
+function exportSparesMonth() {
+  const { year, month } = getYearMonth();
+  download(`${API_BASE}/api/export/spares.xlsx?year=${year}&month=${month}`);
+}
+
+/* ---------------------- Optional Search Hooks -------------------------- */
+/* If your HTML has inputs with these IDs, the handlers will be attached:
+   - #searchCode  (cabinet code)
+   - #searchSerialAsset  (asset serial)
+   - #searchSerialSpare  (spare serial)
+   - and result containers with #searchResultCab / #searchResultAsset / #searchResultSpare
+*/
+async function attachSearchHandlers() {
+  const codeInput = qs("#searchCode");
+  if (codeInput) {
+    const btn = qs("#btnFindCabinet") || findBtnByText("بحث الكبائن") || findBtnByText("بحث الترميز");
+    if (btn) btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const code = (codeInput.value || "").trim();
+      if (!code) return;
+      const data = await getJSON(`${API_BASE}/api/cabinets/find?code=${encodeURIComponent(code)}`);
+      renderResult("#searchResultCab", data, "نتيجة الترميز");
+    });
   }
 
-  // Spares
-  const spa = await fetchJSON(`/api/stats/spares?year=${year}&month=${month}`);
-  if (spa && sumValues(spa) > 0) {
-    destroyChart("spares");
-    charts.spares = makeBarChart(
-      "spareChart",
-      Object.keys(spa),
-      Object.values(spa),
-      "قطع الغيار"
-    );
-  } else {
-    destroyChart("spares");
-    drawEmptyMessageOnCanvas("spareChart");
+  const assetSerial = qs("#searchSerialAsset");
+  if (assetSerial) {
+    const btn = qs("#btnFindAsset") || findBtnByText("بحث الأصل");
+    if (btn) btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const sn = (assetSerial.value || "").trim();
+      if (!sn) return;
+      const data = await getJSON(`${API_BASE}/api/assets/find?serial=${encodeURIComponent(sn)}`);
+      renderResult("#searchResultAsset", data, "نتيجة الأصل");
+    });
+  }
+
+  const spareSerial = qs("#searchSerialSpare");
+  if (spareSerial) {
+    const btn = qs("#btnFindSpare") || findBtnByText("بحث القطعة");
+    if (btn) btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const sn = (spareSerial.value || "").trim();
+      if (!sn) return;
+      const data = await getJSON(`${API_BASE}/api/spares/find?serial=${encodeURIComponent(sn)}`);
+      renderResult("#searchResultSpare", data, "نتيجة القطعة");
+    });
   }
 }
 
-/* ---------- Excel Exports ---------- */
-function wireExports() {
-  // Issue (full + summary)
-  document.getElementById("btnIssueFull")?.addEventListener("click", () => {
-    downloadFile("/api/export/issue/full.xlsx");
-  });
-  document.getElementById("btnIssueSummary")?.addEventListener("click", () => {
-    downloadFile("/api/export/issue/summary.xlsx");
-  });
+function findBtnByText(txt) {
+  return qsa("button, a, .btn").find(b => (b.textContent || "").trim().includes(txt));
+}
 
-  // Monthly/Quarterly summaries
-  document.getElementById("btnMonthlySummary")?.addEventListener("click", () => {
-    const { year, month } = getSelectedYearMonth();
-    downloadFile(`/api/export/monthly_summary.xlsx?year=${year}&month=${month}`);
-  });
+function renderResult(targetSel, data, title) {
+  const target = qs(targetSel);
+  if (!target) return;
+  if (!data) {
+    target.innerHTML = `<div class="panel-lite"><div class="muted">لا توجد نتيجة</div></div>`;
+    return;
+  }
+  const pre = document.createElement("pre");
+  pre.style.background = "#f8fafc";
+  pre.style.border = "1px solid #e5e7eb";
+  pre.style.borderRadius = "8px";
+  pre.style.padding = "10px";
+  pre.textContent = JSON.stringify(data, null, 2);
+  target.innerHTML = `<div style="font-weight:700;margin-bottom:8px">${title}</div>`;
+  target.appendChild(pre);
+}
 
-  document.getElementById("btnQuarterlySummary")?.addEventListener("click", () => {
-    const y = parseIntSafe(document.getElementById("qYear")?.value, new Date().getFullYear());
-    const m = parseIntSafe(document.getElementById("qMonth")?.value, new Date().getMonth() + 1);
-    downloadFile(`/api/export/quarterly_summary.xlsx?start_year=${y}&start_month=${m}`);
-  });
-
-  // Per-module monthly exports
-  document.getElementById("btnExportCabinets")?.addEventListener("click", () => {
-    const { year, month } = getSelectedYearMonth();
-    downloadFile(`/api/export/cabinets.xlsx?year=${year}&month=${month}`);
-  });
-  document.getElementById("btnExportAssets")?.addEventListener("click", () => {
-    const { year, month } = getSelectedYearMonth();
-    downloadFile(`/api/export/assets.xlsx?year=${year}&month=${month}`);
-  });
-  document.getElementById("btnExportSpares")?.addEventListener("click", () => {
-    const { year, month } = getSelectedYearMonth();
-    downloadFile(`/api/export/spares.xlsx?year=${year}&month=${month}`);
+/* ------------------------ UI Helpers ----------------------------------- */
+function setButtonsDisabled(disabled) {
+  qsa("button, .btn").forEach(b => {
+    if (b.dataset.nolock === "1") return; // opt-out if needed
+    b.disabled = !!disabled;
   });
 }
 
-/* ---------- Forms: صرف (Issue) ---------- */
-function wireIssueForm() {
-  const form = document.getElementById("issueForm");
-  if (!form) return;
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const payload = {
-      item_name: form.item_name?.value || "",
-      model: form.model?.value || null,
-      serial: form.serial?.value || null,
-      status: form.status?.value || null,
-      quantity: parseIntSafe(form.quantity?.value, 1),
-      location: form.location?.value || null,
-      requester: form.requester?.value || null,
-      issue_date: form.issue_date?.value, // YYYY-MM-DD
-      qualified_by: form.qualified_by?.value || null,
-      receiver: form.receiver?.value || null,
-    };
-    const ok = await sendJSON("/api/issue", "POST", payload);
-    if (ok) {
-      alert("تم حفظ الصرف بنجاح");
-      form.reset();
-    }
-  });
+function infoBanner(msg) {
+  let bar = qs("#info-banner");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "info-banner";
+    bar.style.background = "#fff8e1";
+    bar.style.border = "1px solid #ffe08a";
+    bar.style.padding = "10px";
+    bar.style.borderRadius = "10px";
+    bar.style.margin = "10px 0";
+    const container = qs("#banner-container") || qs("main") || document.body;
+    container.prepend(bar);
+  }
+  bar.textContent = msg;
+}
+function clearBanner() {
+  const bar = qs("#info-banner");
+  if (bar) bar.remove();
 }
 
-/* ---------- Forms: توريد/تأهيل → كبائن ---------- */
-function wireCabinets() {
-  const form = document.getElementById("cabinetForm");
-  const searchForm = document.getElementById("cabinetSearchForm");
-  const updateBtn = document.getElementById("cabinetUpdateBtn");
-  let editingId = null;
+/* --------------------------- Init -------------------------------------- */
+document.addEventListener("DOMContentLoaded", () => {
+  log("app.js loaded @", new Date().toISOString());
 
-  // Create
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const payload = {
-      cabinet_type: form.cabinet_type?.value || "",
-      code: form.cab_code?.value || null,
-      rehab_date: form.cab_rehab_date?.value,
-      qualified_by: form.cab_qualified_by?.value || null,
-      location: form.cab_location?.value || null,
-      receiver: form.cab_receiver?.value || null,
-      issue_date: form.cab_issue_date?.value || null,
-      notes: form.cab_notes?.value || null,
-    };
-    const ok = await sendJSON("/api/cabinets", "POST", payload);
-    if (ok) {
-      alert("تم حفظ بيانات الكبائن");
-      form.reset();
-      editingId = null;
-      await updateCharts();
-    }
-  });
+  // Bind by ID if present; else by Arabic label text.
+  bindClickByIdOrText("btnUpdateCharts", "تحديث الرسوم", updateCharts);
+  bindClickByIdOrText("btnMonthlySummary", "توليد ملخص شهري", exportMonthly);
+  bindClickByIdOrText("btnQuarterlySummary", "توليد ملخص ربع سنوي", exportQuarterly);
+  bindClickByIdOrText("btnIssueFull", "تقرير الصرف كامل", exportIssueFull);
+  bindClickByIdOrText("btnIssueSummary", "تقرير الصرف الملخص", exportIssueSummary);
 
-  // Find by code (الترميز)
-  searchForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const code = searchForm.cab_search_code?.value || "";
-    if (!code) return alert("أدخل الترميز للبحث");
-    const data = await fetchJSON(`/api/cabinets/find?code=${encodeURIComponent(code)}`);
-    if (!data) return alert("لم يتم العثور");
-    // fill form
-    editingId = data.id;
-    form.cabinet_type && (form.cabinet_type.value = data.cabinet_type || "");
-    form.cab_code && (form.cab_code.value = data.code || "");
-    form.cab_rehab_date && (form.cab_rehab_date.value = data.rehab_date || "");
-    form.cab_qualified_by && (form.cab_qualified_by.value = data.qualified_by || "");
-    form.cab_location && (form.cab_location.value = data.location || "");
-    form.cab_receiver && (form.cab_receiver.value = data.receiver || "");
-    form.cab_issue_date && (form.cab_issue_date.value = data.issue_date || "");
-    form.cab_notes && (form.cab_notes.value = data.notes || "");
-  });
+  // Optional monthly section exports if you have buttons for them
+  bindClickByIdOrText("btnExportCabMonth", "تصدير الكبائن", exportCabinetsMonth);
+  bindClickByIdOrText("btnExportAstMonth", "تصدير الأصول",  exportAssetsMonth);
+  bindClickByIdOrText("btnExportSpaMonth", "تصدير قطع الغيار", exportSparesMonth);
 
-  // Update current record
-  updateBtn?.addEventListener("click", async () => {
-    if (!editingId) return alert("ابحث عن سجل أولاً");
-    const payload = {
-      id: editingId,
-      cabinet_type: form.cabinet_type?.value || "",
-      code: form.cab_code?.value || null,
-      rehab_date: form.cab_rehab_date?.value,
-      qualified_by: form.cab_qualified_by?.value || null,
-      location: form.cab_location?.value || null,
-      receiver: form.cab_receiver?.value || null,
-      issue_date: form.cab_issue_date?.value || null,
-      notes: form.cab_notes?.value || null,
-    };
-    const ok = await sendJSON(`/api/cabinets/${editingId}`, "PUT", payload);
-    if (ok) {
-      alert("تم تحديث بيانات الكبائن");
-      await updateCharts();
-    }
-  });
-}
+  // Attach search handlers if the inputs/buttons exist in your HTML
+  attachSearchHandlers();
 
-/* ---------- Forms: توريد/تأهيل → الأصول ---------- */
-function wireAssets() {
-  const form = document.getElementById("assetForm");
-  const searchForm = document.getElementById("assetSearchForm");
-  const updateBtn = document.getElementById("assetUpdateBtn");
-  let editingId = null;
-
-  // Create
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const payload = {
-      asset_type: form.asset_type?.value || "",
-      model: form.asset_model?.value || null,
-      serial_or_code: form.asset_serial?.value || null,
-      quantity: parseIntSafe(form.asset_quantity?.value, 1),
-      prev_location: form.asset_prev_location?.value || null,
-      supply_date: form.asset_supply_date?.value,
-      qualified_by: form.asset_qualified_by?.value || null,
-      lifted: form.asset_lifted?.checked ?? null,
-      inspector: form.asset_inspector?.value || null,
-      tested: form.asset_tested?.checked ?? null,
-      issue_date: form.asset_issue_date?.value || null,
-      current_location: form.asset_current_location?.value || null,
-      requester: form.asset_requester?.value || null,
-      receiver: form.asset_receiver?.value || null,
-      notes: form.asset_notes?.value || null,
-    };
-    const ok = await sendJSON("/api/assets", "POST", payload);
-    if (ok) {
-      alert("تم حفظ بيانات الأصول");
-      form.reset();
-      editingId = null;
-      await updateCharts();
-    }
-  });
-
-  // Find by serial/code (الرقم التسلسلي/الترميز)
-  searchForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const serial = searchForm.asset_search_serial?.value || "";
-    if (!serial) return alert("أدخل الرقم التسلسلي/الترميز للبحث");
-    const data = await fetchJSON(`/api/assets/find?serial=${encodeURIComponent(serial)}`);
-    if (!data) return alert("لم يتم العثور");
-    editingId = data.id;
-    // fill
-    form.asset_type && (form.asset_type.value = data.asset_type || "");
-    form.asset_model && (form.asset_model.value = data.model || "");
-    form.asset_serial && (form.asset_serial.value = data.serial_or_code || "");
-    form.asset_quantity && (form.asset_quantity.value = data.quantity ?? 1);
-    form.asset_prev_location && (form.asset_prev_location.value = data.prev_location || "");
-    form.asset_supply_date && (form.asset_supply_date.value = data.supply_date || "");
-    form.asset_qualified_by && (form.asset_qualified_by.value = data.qualified_by || "");
-    if (form.asset_lifted) form.asset_lifted.checked = !!data.lifted;
-    form.asset_inspector && (form.asset_inspector.value = data.inspector || "");
-    if (form.asset_tested) form.asset_tested.checked = !!data.tested;
-    form.asset_issue_date && (form.asset_issue_date.value = data.issue_date || "");
-    form.asset_current_location && (form.asset_current_location.value = data.current_location || "");
-    form.asset_requester && (form.asset_requester.value = data.requester || "");
-    form.asset_receiver && (form.asset_receiver.value = data.receiver || "");
-    form.asset_notes && (form.asset_notes.value = data.notes || "");
-  });
-
-  // Update
-  updateBtn?.addEventListener("click", async () => {
-    if (!editingId) return alert("ابحث عن سجل أولاً");
-    const payload = {
-      id: editingId,
-      asset_type: form.asset_type?.value || "",
-      model: form.asset_model?.value || null,
-      serial_or_code: form.asset_serial?.value || null,
-      quantity: parseIntSafe(form.asset_quantity?.value, 1),
-      prev_location: form.asset_prev_location?.value || null,
-      supply_date: form.asset_supply_date?.value,
-      qualified_by: form.asset_qualified_by?.value || null,
-      lifted: form.asset_lifted?.checked ?? null,
-      inspector: form.asset_inspector?.value || null,
-      tested: form.asset_tested?.checked ?? null,
-      issue_date: form.asset_issue_date?.value || null,
-      current_location: form.asset_current_location?.value || null,
-      requester: form.asset_requester?.value || null,
-      receiver: form.asset_receiver?.value || null,
-      notes: form.asset_notes?.value || null,
-    };
-    const ok = await sendJSON(`/api/assets/${editingId}`, "PUT", payload);
-    if (ok) {
-      alert("تم تحديث بيانات الأصل");
-      await updateCharts();
-    }
-  });
-}
-
-/* ---------- Forms: توريد/تأهيل → قطع الغيار ---------- */
-function wireSpares() {
-  const form = document.getElementById("spareForm");
-  const searchForm = document.getElementById("spareSearchForm");
-  const updateBtn = document.getElementById("spareUpdateBtn");
-  let editingId = null;
-
-  // Create
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const payload = {
-      part_category: form.spare_category?.value || "",
-      part_name: form.spare_name?.value || null,
-      part_model: form.spare_model?.value || null,
-      quantity: parseIntSafe(form.spare_quantity?.value, 1),
-      serial: form.spare_serial?.value || null,
-      source: form.spare_source?.value || null,
-      qualified_by: form.spare_qualified_by?.value || null,
-      rehab_date: form.spare_rehab_date?.value,
-      tested: form.spare_tested?.checked ?? null,
-      notes: form.spare_notes?.value || null,
-    };
-    const ok = await sendJSON("/api/spares", "POST", payload);
-    if (ok) {
-      alert("تم حفظ بيانات قطع الغيار");
-      form.reset();
-      editingId = null;
-      await updateCharts();
-    }
-  });
-
-  // Find by serial (الرقم التسلسلي)
-  searchForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const serial = searchForm.spare_search_serial?.value || "";
-    if (!serial) return alert("أدخل الرقم التسلسلي للبحث");
-    const data = await fetchJSON(`/api/spares/find?serial=${encodeURIComponent(serial)}`);
-    if (!data) return alert("لم يتم العثور");
-    editingId = data.id;
-    // fill
-    form.spare_category && (form.spare_category.value = data.part_category || "");
-    form.spare_name && (form.spare_name.value = data.part_name || "");
-    form.spare_model && (form.spare_model.value = data.part_model || "");
-    form.spare_quantity && (form.spare_quantity.value = data.quantity ?? 1);
-    form.spare_serial && (form.spare_serial.value = data.serial || "");
-    form.spare_source && (form.spare_source.value = data.source || "");
-    form.spare_qualified_by && (form.spare_qualified_by.value = data.qualified_by || "");
-    form.spare_rehab_date && (form.spare_rehab_date.value = data.rehab_date || "");
-    if (form.spare_tested) form.spare_tested.checked = !!data.tested;
-    form.spare_notes && (form.spare_notes.value = data.notes || "");
-  });
-
-  // Update
-  updateBtn?.addEventListener("click", async () => {
-    if (!editingId) return alert("ابحث عن سجل أولاً");
-    const payload = {
-      id: editingId,
-      part_category: form.spare_category?.value || "",
-      part_name: form.spare_name?.value || null,
-      part_model: form.spare_model?.value || null,
-      quantity: parseIntSafe(form.spare_quantity?.value, 1),
-      serial: form.spare_serial?.value || null,
-      source: form.spare_source?.value || null,
-      qualified_by: form.spare_qualified_by?.value || null,
-      rehab_date: form.spare_rehab_date?.value,
-      tested: form.spare_tested?.checked ?? null,
-      notes: form.spare_notes?.value || null,
-    };
-    const ok = await sendJSON(`/api/spares/${editingId}`, "PUT", payload);
-    if (ok) {
-      alert("تم تحديث بيانات قطعة الغيار");
-      await updateCharts();
-    }
-  });
-}
-
-/* ---------- Wire buttons ---------- */
-function wireButtons() {
-  const refresh = document.getElementById("refreshChartsBtn") || document.getElementById("updateChartsBtn");
-  refresh?.addEventListener("click", updateCharts);
-
-  // Auto-update once on load
+  // Auto-render once on load so the page shows something immediately
   updateCharts();
 
-  wireExports();
-  wireIssueForm();
-  wireCabinets();
-  wireAssets();
-  wireSpares();
-}
-
-/* ---------- Init ---------- */
-document.addEventListener("DOMContentLoaded", wireButtons);
+  // Keep fixed height on resize but let width be responsive
+  window.addEventListener("resize", () => {
+    ["cab", "ast", "spa"].forEach(slot => {
+      if (CHARTS[slot]?.resize) CHARTS[slot].resize();
+    });
+  });
+});

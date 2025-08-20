@@ -1,4 +1,8 @@
 /* ===== Helpers ===== */
+// it should be relative (no http://127.0.0.1)
+const API_BASE = ""; // good
+// ...then use: fetch(`${API_BASE}/api/...`)
+
 const $ = (sel) => document.querySelector(sel);
 const nowYM = () => { const d=new Date(); return { y:d.getFullYear(), m:d.getMonth()+1 }; };
 async function fetchJSON(url, opts){

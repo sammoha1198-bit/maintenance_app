@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>نظام السامي لإدارة الصرف والتأهيل</title>
 
-  <!-- Fonts + base styles -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=6" />
+  <link rel="stylesheet" href="/static/styles.css?v=7" />
 
   <style>
     [hidden]{display:none !important;}
@@ -16,7 +15,6 @@
     .panel-lite{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
     .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     .ghost{background:#e5e7eb;color:#111;padding:8px 12px;border:none;border-radius:8px;cursor:pointer}
-    .tile,.subtile,button{cursor:pointer}
     input[type="text"],input[type="number"],input[type="date"],select,textarea{
       border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;min-width:160px
     }
@@ -33,7 +31,7 @@
   </header>
 
   <main>
-    <!-- ===== بحث عام في البداية ===== -->
+    <!-- ===== بحث عام (واحد فقط) ===== -->
     <section class="panel-lite" style="margin-bottom:12px">
       <div class="row">
         <input id="search-all" type="text" placeholder="بحث عام: الترميز أو الرقم التسلسلي" style="flex:1;min-width:260px" />
@@ -49,7 +47,7 @@
       <button class="tile" id="open-qual">توريد / تأهيل</button>
     </section>
 
-    <!-- ===== لوحة الصرف/الطارئ ===== -->
+    <!-- ===== الصرف / الطارئ (كما في النسخة السابقة) ===== -->
     <section id="panel-issue" class="panel" data-panel hidden>
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
         <h2 style="margin:0">الصرف / الطارئ</h2>
@@ -82,7 +80,7 @@
       <div id="list-issue" class="list"></div>
     </section>
 
-    <!-- ===== لوحة التوريد/التأهيل (بكل النماذج الداخلية) ===== -->
+    <!-- ===== التوريد / التأهيل ===== -->
     <section id="panel-rehab" class="panel" data-panel hidden>
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
         <h2 style="margin:0">التأهيلات (حسب <b>تاريخ التأهيل</b>)</h2>
@@ -98,27 +96,15 @@
         <button id="btn-dup" class="ghost" title="فحص التكرارات">فحص التكرارات</button>
       </div>
 
-      <!-- تبويبات فرعية -->
       <div class="subtiles">
         <button class="subtile" id="sub-cab">الكبائن</button>
         <button class="subtile" id="sub-ast">الأصول</button>
         <button class="subtile" id="sub-spa">قطع الغيار</button>
       </div>
 
-      <!-- ===== الكبائن ===== -->
+      <!-- ===== الكبائن (بدون صناديق البحث) ===== -->
       <div id="block-cab" class="block hidden">
         <h3>الكبائن</h3>
-
-        <!-- بحث/تعديل بالترميز -->
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="cab-find-code" placeholder="أدخل الترميز (code)" />
-            <button id="cab-find-btn">بحث</button>
-            <button id="cab-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="cab-find-hint" class="muted"></small>
-        </div>
 
         <form id="form-cab" class="grid">
           <input type="hidden" id="cab-id" name="id" />
@@ -154,20 +140,9 @@
         <div id="list-cab" class="list"></div>
       </div>
 
-      <!-- ===== الأصول ===== -->
+      <!-- ===== الأصول (أُضيف تاريخ التأهيل) وبدون صناديق البحث ===== -->
       <div id="block-ast" class="block hidden">
         <h3>الأصول</h3>
-
-        <!-- بحث/تعديل -->
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="ast-find-serial" placeholder="أدخل الرقم التسلسلي/الترميز" />
-            <button id="ast-find-btn">بحث</button>
-            <button id="ast-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="ast-find-hint" class="muted"></small>
-        </div>
 
         <form id="form-ast" class="grid">
           <input type="hidden" id="ast-id" name="id" />
@@ -185,6 +160,10 @@
           <label>الرقم التسلسلي/الترميز<input name="serial_or_code" /></label>
           <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
           <label>الموقع السابق<input name="prev_location" /></label>
+
+          <!-- تمت الإضافة -->
+          <label>تاريخ التأهيل<input type="date" name="rehab_date" required /></label>
+
           <label>تاريخ التوريد<input type="date" name="supply_date" required /></label>
           <label>المؤهل<input name="qualified_by" /></label>
           <label>الرفع
@@ -223,20 +202,9 @@
         <div id="list-ast" class="list"></div>
       </div>
 
-      <!-- ===== قطع الغيار ===== -->
+      <!-- ===== قطع الغيار (بدون صناديق البحث) ===== -->
       <div id="block-spa" class="block hidden">
         <h3>قطع الغيار</h3>
-
-        <!-- بحث/تعديل -->
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="spa-find-serial" placeholder="أدخل الرقم التسلسلي (إن وُجد)" />
-            <button id="spa-find-btn">بحث</button>
-            <button id="spa-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="spa-find-hint" class="muted"></small>
-        </div>
 
         <form id="form-spa" class="grid">
           <input type="hidden" id="spa-id" name="id" />
@@ -284,7 +252,7 @@
         <div id="list-spa" class="list"></div>
       </div>
 
-      <!-- نتائج فحص التكرارات -->
+      <!-- نتائج فحص التكرارات (تظهر تلقائياً عند الضغط) -->
       <div id="dup-results" class="panel-lite" style="margin-top:12px" hidden></div>
     </section>
 
@@ -307,8 +275,7 @@
 
   <footer><small>© نظام السامي لإدارة الصرف والتأهيل</small></footer>
 
-  <!-- Scripts: Chart.js first, then app -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="/static/app.js?v=6" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </body>
 </html>

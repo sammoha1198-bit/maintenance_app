@@ -1,244 +1,167 @@
-/* =========================================================================
-   maintenance_app - front-end bootstrap
-   - Works on localhost and Render (relative API base)
-   - Robust button binding (by ID or Arabic label)
-   - Safe fetch wrappers with clear console errors
-   - Charts: destroys old instances to avoid stretching/overlap
-   - Fixed canvas heights; responsive width
-   - Exports: monthly, quarterly, issue full/summary
-   ======================================================================== */
-
 "use strict";
 
-/* ----------------------------- Config ---------------------------------- */
-// Always call the same origin the page is served from.
-const API_BASE = "";
+/* ================== إعدادات عامة ================== */
+const API_BASE = ""; // نسبي: يعمل محليًا وعلى Render
 
-/* --------------------------- Utilities --------------------------------- */
-const qs  = (sel, el = document) => el.querySelector(sel);
-const qsa = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+const qs  = (s, el=document) => el.querySelector(s);
+const qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
+const log = (...a) => console.log("[app]", ...a);
+const err = (...a) => console.error("[app]", ...a);
 
-function log(...args)   { console.log("[app]", ...args); }
-function warn(...args)  { console.warn("[app]", ...args); }
-function error(...args) { console.error("[app]", ...args); }
+function showOnly(id) {
+  qsa('[data-panel]').forEach(p => p.hidden = true);
+  const el = (typeof id === "string") ? qs(`#${id}`) : id;
+  if (el) el.hidden = false;
+}
+
+function fixedCanvas(canvas, h=320) {
+  if (!canvas) return;
+  canvas.style.width  = "100%";
+  canvas.style.height = `${h}px`;
+  if (!canvas.getAttribute("height")) canvas.setAttribute("height", String(h));
+}
+
+/* ================== ربط الأزرار ================== */
+function bindUI() {
+  // قوائم عليا
+  qs("#open-issue")?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-issue"); });
+  qs("#open-qual") ?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-qual");  });
+
+  // رجوع
+  qs("#back-home")  ?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-home"); });
+  qs("#back-home-2")?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-home"); });
+
+  // تبويبات التأهيل
+  qs("#open-cab")   ?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-cab");    });
+  qs("#open-assets")?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-assets"); });
+  qs("#open-spares")?.addEventListener("click", e => { e.preventDefault(); showOnly("panel-spares"); });
+
+  // أزرار الرسوم والتقارير
+  qs("#btnUpdateCharts")    ?.addEventListener("click", e => { e.preventDefault(); updateCharts(); });
+  qs("#btnMonthlySummary")  ?.addEventListener("click", e => { e.preventDefault(); exportMonthly(); });
+  qs("#btnQuarterlySummary")?.addEventListener("click", e => { e.preventDefault(); exportQuarterly(); });
+  qs("#btnIssueFull")       ?.addEventListener("click", e => { e.preventDefault(); download(`${API_BASE}/api/export/issue/full.xlsx`); });
+  qs("#btnIssueSummary")    ?.addEventListener("click", e => { e.preventDefault(); download(`${API_BASE}/api/export/issue/summary.xlsx`); });
+
+  // إظهار القائمة الرئيسية كبداية
+  showOnly("panel-home");
+}
+
+function getYearMonth() {
+  const now = new Date();
+  const y = parseInt(qs("#year")?.value ?? now.getFullYear(), 10);
+  const m = parseInt(qs("#month")?.value ?? (now.getMonth()+1), 10);
+  return { year: y, month: m };
+}
 
 async function getJSON(url) {
   try {
     const r = await fetch(url, { credentials: "same-origin" });
-    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } catch (e) {
-    error("GET failed:", url, e);
+    err("GET failed:", url, e);
     return null;
   }
 }
+function download(url) { window.location.href = url; }
 
-function download(url) {
-  // Using same window is more reliable with some blockers
-  window.location.href = url;
-}
+/* ================== الرسم البياني ================== */
+let CH = { cab:null, ast:null, spa:null };
 
-function bindClickByIdOrText(id, containsText, handler) {
-  let el = id ? qs(`#${id}`) : null;
-  if (!el && containsText) {
-    el = qsa("button, a, .btn").find(b => (b.textContent || "").trim().includes(containsText));
-  }
-  if (el) {
-    el.addEventListener("click", ev => { ev.preventDefault?.(); handler(); });
-    log("bound:", id || containsText);
-  } else {
-    warn("button not found:", id || containsText);
-  }
-}
+function destroy(ch) { try { ch?.destroy?.(); } catch {} }
 
-function int(v, def) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : def;
-}
+function drawCabinetsPie(data) {
+  const c = qs("#cabPie"); if (!c) return;
+  fixedCanvas(c, 320); destroy(CH.cab);
 
-/* ---------------------------- Date inputs ------------------------------ */
-function getYearMonth() {
-  const yEl = qs("#year")  || qs('[name="year"]');
-  const mEl = qs("#month") || qs('[name="month"]');
-  const now = new Date();
-  const year  = int(yEl?.value ?? now.getFullYear(), now.getFullYear());
-  const month = int(mEl?.value ?? (now.getMonth() + 1), now.getMonth() + 1); // 1..12
-  return { year, month };
-}
+  const labels = ["ATS","AMF","HYBRID","حماية انفرتر","ظفيرة تحكم"];
+  const values = labels.map(k => Number((data||{})[k] || 0));
 
-/* --------------------------- Charts setup ------------------------------ */
-// We support Chart.js if present; otherwise show minimal text.
-let CHARTS = { cab: null, ast: null, spa: null };
+  if (!window.Chart) { c.replaceWith(textFallback("الكبائن", labels, values)); return; }
 
-function fixedCanvas(el, height = 320) {
-  if (!el) return null;
-  // Ensure a fixed height to prevent vertical stretching
-  el.style.width = "100%";
-  el.style.height = `${height}px`;
-  // For Chart.js, set attribute height too
-  if (!el.getAttribute("height")) el.setAttribute("height", String(height));
-  return el.getContext ? el : null;
-}
-
-function destroyChart(slot) {
-  if (CHARTS[slot] && typeof CHARTS[slot].destroy === "function") {
-    CHARTS[slot].destroy();
-  }
-  CHARTS[slot] = null;
-}
-
-function hasData(obj) {
-  if (!obj) return false;
-  const vals = Object.values(obj).map(v => Number(v || 0));
-  return vals.some(n => n > 0);
-}
-
-/* ---------- Render Cabinets (Pie) ---------- */
-function renderCabinetsPie(dataObj) {
-  const canvas =
-    qs("#cabPie") || qs("#cabinetPie") || qs("#chartCabinets") || qs('canvas[data-chart="cabinets"]');
-  if (!canvas) { warn("cabinet pie canvas not found"); return; }
-  fixedCanvas(canvas, 320);
-  destroyChart("cab");
-
-  const labels = ["ATS", "AMF", "HYBRID", "حماية انفرتر", "ظفيرة تحكم"];
-  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
-
-  if (!window.Chart) {
-    // fallback: show text
-    canvas.replaceWith(textFallback("الكبائن", labels, dataset));
-    return;
-  }
-
-  CHARTS.cab = new Chart(canvas.getContext("2d"), {
+  CH.cab = new Chart(c.getContext("2d"), {
     type: "pie",
-    data: {
-      labels,
-      datasets: [{
-        data: dataset
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 600 }
-    }
+    data: { labels, datasets: [{ data: values }] },
+    options: { responsive:true, maintainAspectRatio:false, animation:{duration:600} }
   });
 }
 
-/* ---------- Render Assets (Bar) ---------- */
-function renderAssetsBar(dataObj) {
-  const canvas =
-    qs("#assetsBar") || qs("#chartAssets") || qs('canvas[data-chart="assets"]');
-  if (!canvas) { warn("assets bar canvas not found"); return; }
-  fixedCanvas(canvas, 320);
-  destroyChart("ast");
+function drawAssetsBar(data) {
+  const c = qs("#assetsBar"); if (!c) return;
+  fixedCanvas(c, 320); destroy(CH.ast);
 
   const labels = ["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"];
-  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
+  const values = labels.map(k => Number((data||{})[k] || 0));
 
-  if (!window.Chart) {
-    canvas.replaceWith(textFallback("الأصول", labels, dataset));
-    return;
-  }
+  if (!window.Chart) { c.replaceWith(textFallback("الأصول", labels, values)); return; }
 
-  CHARTS.ast = new Chart(canvas.getContext("2d"), {
+  CH.ast = new Chart(c.getContext("2d"), {
     type: "bar",
-    data: {
-      labels,
-      datasets: [{ label: "عدد", data: dataset }]
-    },
+    data: { labels, datasets: [{ label:"عدد", data: values }] },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 600 },
-      scales: {
-        y: { beginAtZero: true, suggestedMax: Math.max(5, Math.max(...dataset) + 1) }
-      }
+      responsive:true, maintainAspectRatio:false, animation:{duration:600},
+      scales: { y: { beginAtZero:true, suggestedMax: Math.max(5, Math.max(...values)+1) } }
     }
   });
 }
 
-/* ---------- Render Spares (Bar) ---------- */
-function renderSparesBar(dataObj) {
-  const canvas =
-    qs("#sparesBar") || qs("#chartSpares") || qs('canvas[data-chart="spares"]');
-  if (!canvas) { warn("spares bar canvas not found"); return; }
-  fixedCanvas(canvas, 320);
-  destroyChart("spa");
+function drawSparesBar(data) {
+  const c = qs("#sparesBar"); if (!c) return;
+  fixedCanvas(c, 320); destroy(CH.spa);
 
   const labels = ["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"];
-  const dataset = labels.map(k => Number((dataObj || {})[k] || 0));
+  const values = labels.map(k => Number((data||{})[k] || 0));
 
-  if (!window.Chart) {
-    canvas.replaceWith(textFallback("قطع الغيار", labels, dataset));
-    return;
-  }
+  if (!window.Chart) { c.replaceWith(textFallback("قطع الغيار", labels, values)); return; }
 
-  CHARTS.spa = new Chart(canvas.getContext("2d"), {
+  CH.spa = new Chart(c.getContext("2d"), {
     type: "bar",
-    data: {
-      labels,
-      datasets: [{ label: "عدد", data: dataset }]
-    },
+    data: { labels, datasets: [{ label:"عدد", data: values }] },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 600 },
-      scales: {
-        y: { beginAtZero: true, suggestedMax: Math.max(5, Math.max(...dataset) + 1) }
-      }
+      responsive:true, maintainAspectRatio:false, animation:{duration:600},
+      scales: { y: { beginAtZero:true, suggestedMax: Math.max(5, Math.max(...values)+1) } }
     }
   });
 }
 
-/* ---------- Text fallback (no Chart.js) ---------- */
-function textFallback(title, labels, values) {
-  const wrap = document.createElement("div");
-  wrap.className = "panel-lite";
-  const has = values.some(v => Number(v) > 0);
-  wrap.innerHTML = `
+function textFallback(title, labels, vals) {
+  const div = document.createElement("div");
+  const has = vals.some(v => Number(v) > 0);
+  div.className = "panel-lite";
+  div.innerHTML = `
     <div style="padding:10px">
       <div style="font-weight:700;margin-bottom:8px">${title}</div>
-      ${has
-        ? `<ul style="list-style:disc;padding-inline-start:20px;margin:0">
-             ${labels.map((l,i)=>`<li>${l}: ${values[i]}</li>`).join("")}
-           </ul>`
-        : `<div class="muted">لا توجد بيانات لهذا الشهر</div>`}
+      ${has ? `<ul style="list-style:disc;padding-inline-start:20px;margin:0">
+        ${labels.map((l,i)=>`<li>${l}: ${vals[i]}</li>`).join("")}
+      </ul>` : `<div class="muted">لا توجد بيانات لهذا الشهر</div>`}
     </div>`;
-  return wrap;
+  return div;
 }
 
-/* ----------------------- Update Charts Flow ---------------------------- */
+/* ================== تدفق التحديث ================== */
 async function updateCharts() {
   const { year, month } = getYearMonth();
-  log("update charts for", { year, month });
+  log("update charts", { year, month });
 
-  // Disable all buttons while loading to prevent double-press
-  setButtonsDisabled(true);
-
+  setDisabled(true);
   const [cab, ast, spa] = await Promise.all([
     getJSON(`${API_BASE}/api/stats/cabinets?year=${year}&month=${month}`),
     getJSON(`${API_BASE}/api/stats/assets?year=${year}&month=${month}`),
     getJSON(`${API_BASE}/api/stats/spares?year=${year}&month=${month}`)
   ]);
 
-  // Render
-  renderCabinetsPie(cab);
-  renderAssetsBar(ast);
-  renderSparesBar(spa);
-
-  // Show simple “no data” banners if everything is zero
-  if (!hasData(cab) && !hasData(ast) && !hasData(spa)) {
-    infoBanner("لا توجد بيانات لهذا الشهر. أضف سجلات ثم اضغط (تحديث الرسوم).");
-  } else {
-    clearBanner();
-  }
-
-  setButtonsDisabled(false);
+  drawCabinetsPie(cab);
+  drawAssetsBar(ast);
+  drawSparesBar(spa);
+  setDisabled(false);
 }
 
-/* --------------------------- Exports ----------------------------------- */
+function setDisabled(x) {
+  qsa("button.btn, button").forEach(b => b.disabled = !!x);
+}
+
+/* ================== تصدير ================== */
 function exportMonthly() {
   const { year, month } = getYearMonth();
   download(`${API_BASE}/api/export/monthly_summary.xlsx?year=${year}&month=${month}`);
@@ -247,143 +170,20 @@ function exportQuarterly() {
   const { year, month } = getYearMonth();
   download(`${API_BASE}/api/export/quarterly_summary.xlsx?start_year=${year}&start_month=${month}`);
 }
-function exportIssueFull()    { download(`${API_BASE}/api/export/issue/full.xlsx`); }
-function exportIssueSummary() { download(`${API_BASE}/api/export/issue/summary.xlsx`); }
 
-// Optional: per-section exports if you added buttons for them
-function exportCabinetsMonth() {
-  const { year, month } = getYearMonth();
-  download(`${API_BASE}/api/export/cabinets.xlsx?year=${year}&month=${month}`);
-}
-function exportAssetsMonth() {
-  const { year, month } = getYearMonth();
-  download(`${API_BASE}/api/export/assets.xlsx?year=${year}&month=${month}`);
-}
-function exportSparesMonth() {
-  const { year, month } = getYearMonth();
-  download(`${API_BASE}/api/export/spares.xlsx?year=${year}&month=${month}`);
-}
-
-/* ---------------------- Optional Search Hooks -------------------------- */
-/* If your HTML has inputs with these IDs, the handlers will be attached:
-   - #searchCode  (cabinet code)
-   - #searchSerialAsset  (asset serial)
-   - #searchSerialSpare  (spare serial)
-   - and result containers with #searchResultCab / #searchResultAsset / #searchResultSpare
-*/
-async function attachSearchHandlers() {
-  const codeInput = qs("#searchCode");
-  if (codeInput) {
-    const btn = qs("#btnFindCabinet") || findBtnByText("بحث الكبائن") || findBtnByText("بحث الترميز");
-    if (btn) btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      const code = (codeInput.value || "").trim();
-      if (!code) return;
-      const data = await getJSON(`${API_BASE}/api/cabinets/find?code=${encodeURIComponent(code)}`);
-      renderResult("#searchResultCab", data, "نتيجة الترميز");
-    });
-  }
-
-  const assetSerial = qs("#searchSerialAsset");
-  if (assetSerial) {
-    const btn = qs("#btnFindAsset") || findBtnByText("بحث الأصل");
-    if (btn) btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      const sn = (assetSerial.value || "").trim();
-      if (!sn) return;
-      const data = await getJSON(`${API_BASE}/api/assets/find?serial=${encodeURIComponent(sn)}`);
-      renderResult("#searchResultAsset", data, "نتيجة الأصل");
-    });
-  }
-
-  const spareSerial = qs("#searchSerialSpare");
-  if (spareSerial) {
-    const btn = qs("#btnFindSpare") || findBtnByText("بحث القطعة");
-    if (btn) btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      const sn = (spareSerial.value || "").trim();
-      if (!sn) return;
-      const data = await getJSON(`${API_BASE}/api/spares/find?serial=${encodeURIComponent(sn)}`);
-      renderResult("#searchResultSpare", data, "نتيجة القطعة");
-    });
-  }
-}
-
-function findBtnByText(txt) {
-  return qsa("button, a, .btn").find(b => (b.textContent || "").trim().includes(txt));
-}
-
-function renderResult(targetSel, data, title) {
-  const target = qs(targetSel);
-  if (!target) return;
-  if (!data) {
-    target.innerHTML = `<div class="panel-lite"><div class="muted">لا توجد نتيجة</div></div>`;
-    return;
-  }
-  const pre = document.createElement("pre");
-  pre.style.background = "#f8fafc";
-  pre.style.border = "1px solid #e5e7eb";
-  pre.style.borderRadius = "8px";
-  pre.style.padding = "10px";
-  pre.textContent = JSON.stringify(data, null, 2);
-  target.innerHTML = `<div style="font-weight:700;margin-bottom:8px">${title}</div>`;
-  target.appendChild(pre);
-}
-
-/* ------------------------ UI Helpers ----------------------------------- */
-function setButtonsDisabled(disabled) {
-  qsa("button, .btn").forEach(b => {
-    if (b.dataset.nolock === "1") return; // opt-out if needed
-    b.disabled = !!disabled;
-  });
-}
-
-function infoBanner(msg) {
-  let bar = qs("#info-banner");
-  if (!bar) {
-    bar = document.createElement("div");
-    bar.id = "info-banner";
-    bar.style.background = "#fff8e1";
-    bar.style.border = "1px solid #ffe08a";
-    bar.style.padding = "10px";
-    bar.style.borderRadius = "10px";
-    bar.style.margin = "10px 0";
-    const container = qs("#banner-container") || qs("main") || document.body;
-    container.prepend(bar);
-  }
-  bar.textContent = msg;
-}
-function clearBanner() {
-  const bar = qs("#info-banner");
-  if (bar) bar.remove();
-}
-
-/* --------------------------- Init -------------------------------------- */
+/* ================== تشغيل ================== */
 document.addEventListener("DOMContentLoaded", () => {
-  log("app.js loaded @", new Date().toISOString());
+  log("app.js ready");
+  bindUI();
 
-  // Bind by ID if present; else by Arabic label text.
-  bindClickByIdOrText("btnUpdateCharts", "تحديث الرسوم", updateCharts);
-  bindClickByIdOrText("btnMonthlySummary", "توليد ملخص شهري", exportMonthly);
-  bindClickByIdOrText("btnQuarterlySummary", "توليد ملخص ربع سنوي", exportQuarterly);
-  bindClickByIdOrText("btnIssueFull", "تقرير الصرف كامل", exportIssueFull);
-  bindClickByIdOrText("btnIssueSummary", "تقرير الصرف الملخص", exportIssueSummary);
+  // لو عندك قيم افتراضية للسنة/الشهر خليها الآن
+  const now = new Date();
+  if (qs("#year")  && !qs("#year").value)  qs("#year").value  = String(now.getFullYear());
+  if (qs("#month") && !qs("#month").value) qs("#month").value = String(now.getMonth()+1);
 
-  // Optional monthly section exports if you have buttons for them
-  bindClickByIdOrText("btnExportCabMonth", "تصدير الكبائن", exportCabinetsMonth);
-  bindClickByIdOrText("btnExportAstMonth", "تصدير الأصول",  exportAssetsMonth);
-  bindClickByIdOrText("btnExportSpaMonth", "تصدير قطع الغيار", exportSparesMonth);
+  // جهّز الكانفاسات
+  fixedCanvas(qs("#cabPie")); fixedCanvas(qs("#assetsBar")); fixedCanvas(qs("#sparesBar"));
 
-  // Attach search handlers if the inputs/buttons exist in your HTML
-  attachSearchHandlers();
-
-  // Auto-render once on load so the page shows something immediately
+  // تحديث أولي (إن وُجدت بيانات)
   updateCharts();
-
-  // Keep fixed height on resize but let width be responsive
-  window.addEventListener("resize", () => {
-    ["cab", "ast", "spa"].forEach(slot => {
-      if (CHARTS[slot]?.resize) CHARTS[slot].resize();
-    });
-  });
 });

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import os
 import io
 from datetime import date
@@ -14,15 +16,40 @@ from sqlmodel import SQLModel, Field, Session, select, create_engine
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.chart import PieChart, BarChart, Reference
-from openpyxl.chart.label import DataLabelList
+try:
+    # present in openpyxl 3.1.x
+    from openpyxl.chart.label import DataLabelList
+except Exception:  # older openpyxl: keep code from breaking
+    DataLabelList = None  # handle None when adding labels
 from openpyxl.utils import get_column_letter
-from sqlmodel import SQLModel, Field, Session, select, create_engine
-DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+# ---------- Database engine ----------
+def _normalize_database_url(url: str) -> str:
+    """Ensure SQLAlchemy can use the Postgres URL by adding the driver if missing."""
+    if url.startswith("postgres://"):
+        # old Heroku-style
+        return "postgresql+psycopg2://" + url[len("postgres://"):]
+    if url.startswith("postgresql://") and "+psycopg2" not in url:
+        return "postgresql+psycopg2://" + url[len("postgresql://"):]
+    return url
+
+
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+
 if DATABASE_URL:
+    DATABASE_URL = _normalize_database_url(DATABASE_URL)
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
+    # default to SQLite (free Render plan: /tmp/maintenance.db)
     DB_PATH = os.getenv("DB_PATH", "./maintenance.db")
-    engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+
 
 
 

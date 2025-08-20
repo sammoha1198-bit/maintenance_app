@@ -387,3 +387,50 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 });
+// ===== Fix Panel Toggle (بدون تغيير التصميم) =====
+(function () {
+  function byText(txt) {
+    return Array.from(document.querySelectorAll("button, a, .btn"))
+      .find(b => (b.textContent || "").trim().includes(txt));
+  }
+  function pick(cands) {
+    for (const s of cands) { const el = document.querySelector(s); if (el) return el; }
+    return null;
+  }
+  function pickByHeading(text){
+    const boxes = Array.from(document.querySelectorAll("section,div,article"))
+      .filter(el => el.hasAttribute("data-panel") || /panel|لوحة|section|tab|content/i.test(el.className||""));
+    return boxes.find(el => {
+      const h = el.querySelector("h1,h2,h3,.title,.section-title");
+      return h && (h.textContent||"").includes(text);
+    }) || null;
+  }
+  const homePanel  = pick(["#panel-home","#home",".home-panel"]) || pickByHeading("القائمة") || pickByHeading("الرئيسية");
+  const issuePanel = pick(["#panel-issue","#issue-panel","#issue",".panel-issue",".issue-panel"]) || pickByHeading("الصرف") || pickByHeading("الطارئ");
+  const qualPanel  = pick(["#panel-qual","#qual-panel","#qualification",".panel-qual",".qual-panel"]) || pickByHeading("توريد") || pickByHeading("تأهيل");
+
+  function showOnly(el) {
+    [homePanel, issuePanel, qualPanel].forEach(p => { if (!p) return; p.hidden = true; p.style.display = "none"; });
+    if (el) { el.hidden = false; el.style.display = ""; }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const btnIssue = document.querySelector("#open-issue") || byText("الصرف/الطارئ") || byText("الصرف");
+    const btnQual  = document.querySelector("#open-qual")  || byText("توريد/تأهيل") || byText("التأهيل") || byText("توريد");
+    const backBtns = document.querySelectorAll("#back-home, #back-home-2, .btn-back");
+
+    if (homePanel) showOnly(homePanel);
+
+    if (btnIssue && issuePanel) {
+      btnIssue.addEventListener("click", e => { e.preventDefault(); showOnly(issuePanel); });
+    } else {
+      console.warn("⚠️ لم يتم العثور على زر أو لوحة الصرف/الطارئ");
+    }
+    if (btnQual && qualPanel) {
+      btnQual.addEventListener("click", e => { e.preventDefault(); showOnly(qualPanel); });
+    } else {
+      console.warn("⚠️ لم يتم العثور على زر أو لوحة التوريد/التأهيل");
+    }
+    backBtns.forEach(b => b.addEventListener("click", e => { e.preventDefault(); if (homePanel) showOnly(homePanel); }));
+  });
+})();

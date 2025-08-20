@@ -1,262 +1,512 @@
-/* ===== Helpers ===== */
-// it should be relative (no http://127.0.0.1)
-const API_BASE = ""; // good
-// ...then use: fetch(`${API_BASE}/api/...`)
+/* =========================
+   app.js — Maintenance App
+   ========================= */
 
-const $ = (sel) => document.querySelector(sel);
-const nowYM = () => { const d=new Date(); return { y:d.getFullYear(), m:d.getMonth()+1 }; };
-async function fetchJSON(url, opts){
-  const res = await fetch(url, opts);
-  const t = await res.text(); let j={};
-  try{ j = t ? JSON.parse(t) : {}; }catch{ j = { raw:t }; }
-  if(!res.ok) throw new Error((j && (j.detail||j.message)) || res.statusText);
-  return j;
-}
-const COLORS = ['#2563eb','#f59e0b','#10b981','#ef4444','#a855f7','#06b6d4','#22c55e','#fb7185','#f97316','#14b8a6'];
+"use strict";
 
-/* ===== Panels show/hide ===== */
-$('#tile-issue').onclick = () => { $('#panel-issue').classList.remove('hidden'); $('#panel-rehab').classList.add('hidden'); };
-$('#tile-rehab').onclick = () => { $('#panel-rehab').classList.remove('hidden'); $('#panel-issue').classList.add('hidden'); };
-$('#sub-cab').onclick = () => { $('#block-cab').classList.remove('hidden'); $('#block-ast').classList.add('hidden'); $('#block-spa').classList.add('hidden'); };
-$('#sub-ast').onclick = () => { $('#block-ast').classList.remove('hidden'); $('#block-cab').classList.add('hidden'); $('#block-spa').classList.add('hidden'); };
-$('#sub-spa').onclick = () => { $('#block-spa').classList.remove('hidden'); $('#block-cab').classList.add('hidden'); $('#block-ast').classList.add('hidden'); };
+/* ----------- Config ----------- */
+const API_BASE = ""; // relative base: works locally and on Render
 
-/* ===== Issue (صرف/طارئ) ===== */
-$('#form-issue').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  body.quantity = Number(body.quantity || 1);
-  await fetchJSON('/api/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  e.target.reset(); refreshIssue(); alert('تم الحفظ');
-});
-$('#btn-issue-full').onclick    = ()=> window.location = '/api/export/issue/full.xlsx';
-$('#btn-issue-summary').onclick = ()=> window.location = '/api/export/issue/summary.xlsx';
-
-async function refreshIssue(){
-  const arr = await fetchJSON('/api/issue');
-  $('#list-issue').innerHTML = arr.map(r => `<div class="rowcard">${r.issue_date} — ${r.item_name} ×${r.quantity} (${r.receiver||''})</div>`).join('');
-}
-refreshIssue();
-
-/* ===== Defaults for Y/M inputs ===== */
-(function setDefaultYM(){
-  const {y,m} = nowYM();
-  ['cab','ast','spa'].forEach(p => { const yEl=$(`#${p}-year`), mEl=$(`#${p}-month`); if(yEl) yEl.value=y; if(mEl) mEl.value=m; });
-  $('#chart-year').value = y; $('#chart-month').value = m;
-})();
-
-/* ===== Cabinets ===== */
-$('#form-cab').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  await fetchJSON('/api/cabinets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  e.target.reset(); $('#cab-id').value=''; $('#cab-find-hint').textContent='';
-  refreshCab(); alert('تم الحفظ');
-});
-$('#cab-find-btn').onclick = async ()=>{
-  const code = $('#cab-find-code').value.trim(); if(!code) return alert('أدخل الترميز');
-  try{
-    const r = await fetchJSON('/api/cabinets/find?code='+encodeURIComponent(code));
-    $('#cab-id').value=r.id;
-    const f=$('#form-cab');
-    f.cabinet_type.value=r.cabinet_type||''; f.code.value=r.code||''; f.rehab_date.value=r.rehab_date||'';
-    f.qualified_by.value=r.qualified_by||''; f.location.value=r.location||''; f.receiver.value=r.receiver||'';
-    f.issue_date.value=r.issue_date||''; f.notes.value=r.notes||'';
-    $('#cab-find-hint').textContent='تم العثور — عدّل ثم اضغط "تحديث السجل"';
-  }catch(err){ alert(err.message); }
-};
-$('#cab-clear-btn').onclick = ()=>{ $('#form-cab').reset(); $('#cab-id').value=''; $('#cab-find-hint').textContent=''; };
-$('#btn-cab-update').onclick = async ()=>{
-  const id = $('#cab-id').value; if(!id) return alert('ابحث أولًا');
-  const body = Object.fromEntries(new FormData($('#form-cab')).entries());
-  await fetchJSON('/api/cabinets/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  refreshCab(); alert('تم التحديث');
-};
-$('#btn-cab-export').onclick = ()=>{
-  const y=Number($('#cab-year').value), m=Number($('#cab-month').value);
-  window.location = `/api/export/cabinets.xlsx?year=${y}&month=${m}`;
-};
-async function refreshCab(){
-  const arr = await fetchJSON('/api/cabinets');
-  $('#list-cab').innerHTML = arr.map(r => `<div class="rowcard">${r.rehab_date} — ${r.cabinet_type} (${r.code||''})</div>`).join('');
-}
-refreshCab();
-
-/* ===== Assets ===== */
-$('#form-ast').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  body.quantity = Number(body.quantity || 1);
-  body.lifted = body.lifted==='true'?true:(body.lifted==='false'?false:null);
-  body.tested = body.tested==='true'?true:(body.tested==='false'?false:null);
-  await fetchJSON('/api/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  e.target.reset(); $('#ast-id').value=''; $('#ast-find-hint').textContent='';
-  refreshAst(); alert('تم الحفظ');
-});
-$('#ast-find-btn').onclick = async ()=>{
-  const key = $('#ast-find-serial').value.trim(); if(!key) return alert('أدخل الرقم');
-  try{
-    const r = await fetchJSON('/api/assets/find?serial='+encodeURIComponent(key));
-    $('#ast-id').value=r.id;
-    const f=$('#form-ast');
-    f.asset_type.value=r.asset_type||''; f.model.value=r.model||''; f.serial_or_code.value=r.serial_or_code||'';
-    f.quantity.value=r.quantity??1; f.prev_location.value=r.prev_location||''; f.supply_date.value=r.supply_date||'';
-    f.qualified_by.value=r.qualified_by||''; f.lifted.value=r.lifted===true?'true':(r.lifted===false?'false':'');
-    f.inspector.value=r.inspector||''; f.tested.value=r.tested===true?'true':(r.tested===false?'false':'');
-    f.issue_date.value=r.issue_date||''; f.current_location.value=r.current_location||'';
-    f.requester.value=r.requester||''; f.receiver.value=r.receiver||''; f.notes.value=r.notes||'';
-    $('#ast-find-hint').textContent='تم العثور — عدّل ثم "تحديث السجل"';
-  }catch(err){ alert(err.message); }
-};
-$('#ast-clear-btn').onclick = ()=>{ $('#form-ast').reset(); $('#ast-id').value=''; $('#ast-find-hint').textContent=''; };
-$('#btn-ast-update').onclick = async ()=>{
-  const id=$('#ast-id').value; if(!id) return alert('ابحث أولًا');
-  const body = Object.fromEntries(new FormData($('#form-ast')).entries());
-  await fetchJSON('/api/assets/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  refreshAst(); alert('تم التحديث');
-};
-$('#btn-ast-export').onclick = ()=>{
-  const y=Number($('#ast-year').value), m=Number($('#ast-month').value);
-  window.location = `/api/export/assets.xlsx?year=${y}&month=${m}`;
-};
-async function refreshAst(){
-  const arr = await fetchJSON('/api/assets');
-  $('#list-ast').innerHTML = arr.map(r => `<div class="rowcard">${r.supply_date} — ${r.asset_type} ×${r.quantity} ${r.serial_or_code?('['+r.serial_or_code+']'):''}</div>`).join('');
-}
-refreshAst();
-
-/* ===== Spares ===== */
-$('#form-spa').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  body.quantity = Number(body.quantity || 1);
-  body.tested = body.tested==='true'?true:(body.tested==='false'?false:null);
-  await fetchJSON('/api/spares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  e.target.reset(); $('#spa-id').value=''; $('#spa-find-hint').textContent='';
-  refreshSpa(); alert('تم الحفظ');
-});
-$('#spa-find-btn').onclick = async ()=>{
-  const key = $('#spa-find-serial').value.trim(); if(!key) return alert('أدخل الرقم');
-  try{
-    const r = await fetchJSON('/api/spares/find?serial='+encodeURIComponent(key));
-    $('#spa-id').value=r.id;
-    const f=$('#form-spa');
-    f.part_category.value=r.part_category||''; f.part_name.value=r.part_name||''; f.part_model.value=r.part_model||'';
-    f.quantity.value=r.quantity??1; f.serial.value=r.serial||''; f.source.value=r.source||'';
-    f.qualified_by.value=r.qualified_by||''; f.rehab_date.value=r.rehab_date||'';
-    f.tested.value=r.tested===true?'true':(r.tested===false?'false':''); f.notes.value=r.notes||'';
-    $('#spa-find-hint').textContent='تم العثور — عدّل ثم "تحديث السجل"';
-  }catch(err){ alert(err.message); }
-};
-$('#spa-clear-btn').onclick = ()=>{ $('#form-spa').reset(); $('#spa-id').value=''; $('#spa-find-hint').textContent=''; };
-$('#btn-spa-update').onclick = async ()=>{
-  const id=$('#spa-id').value; if(!id) return alert('ابحث أولًا');
-  const body = Object.fromEntries(new FormData($('#form-spa')).entries());
-  await fetchJSON('/api/spares/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  refreshSpa(); alert('تم التحديث');
-};
-$('#btn-spa-export').onclick = ()=>{
-  const y=Number($('#spa-year').value), m=Number($('#spa-month').value);
-  window.location = `/api/export/spares.xlsx?year=${y}&month=${m}`;
-};
-async function refreshSpa(){
-  const arr = await fetchJSON('/api/spares');
-  $('#list-spa').innerHTML = arr.map(r => `<div class="rowcard">${r.rehab_date} — ${r.part_category} ×${r.quantity}</div>`).join('');
-}
-refreshSpa();
-
-/* ===== Duplicate check ===== */
-$('#btn-dup').onclick = async ()=>{
-  const j = await fetchJSON('/api/validate/duplicates');
-  const msg = [
-    'تكرارات محتملة:',
-    `أكواد الكبائن: ${j.cabinets_codes.length ? j.cabinets_codes.join(', ') : 'لا يوجد'}`,
-    `سيريالات الأصول: ${j.assets_serials.length ? j.assets_serials.join(', ') : 'لا يوجد'}`,
-    `(سيريال × موقع) للأصول: ${j.assets_serial_loc_pairs.length ? j.assets_serial_loc_pairs.join(' | ') : 'لا يوجد'}`,
-    `(سيريال × مصدر) للغيار: ${j.spares_serial_src_pairs.length ? j.spares_serial_src_pairs.join(' | ') : 'لا يوجد'}`
-  ].join('\n');
-  alert(msg);
-};
-
-/* ===== Charts ===== */
-
-/* Hard reset canvas: destroy chart, replace node, lock size to wrapper */
-function prepCanvas(canvasId){
-  const old = document.getElementById(canvasId);
-  const existed = Chart.getChart(old);
-  if (existed) existed.destroy();
-  const parent = old.parentElement;
-  const fresh = old.cloneNode(false);               // same id, empty
-  parent.replaceChild(fresh, old);
-  fresh.width  = parent.clientWidth;
-  fresh.height = parent.clientHeight || 340;
-  return fresh.getContext('2d');
+/* --------- Helpers ---------- */
+async function fetchJSON(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    return await res.json();
+  } catch (err) {
+    console.error("fetchJSON failed:", path, err);
+    return null;
+  }
 }
 
-function clearNoData(canvasId){
-  const wrap = document.getElementById(canvasId).parentElement;
-  const n = wrap.querySelector('.nodata'); if(n) n.remove();
-}
-function showNoData(canvasId){
-  const wrap = document.getElementById(canvasId).parentElement;
-  let n = wrap.querySelector('.nodata');
-  if(!n){ n = document.createElement('div'); n.className='nodata'; wrap.appendChild(n); }
-  n.textContent = 'لا توجد بيانات لهذا الشهر';
+async function sendJSON(path, method, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(body),
+    });
+    const txt = await res.text();
+    let data = null;
+    try { data = txt ? JSON.parse(txt) : null; } catch {}
+    if (!res.ok) throw new Error(data?.detail || txt || `HTTP ${res.status}`);
+    return data;
+  } catch (err) {
+    console.error(`${method} ${path} failed`, err);
+    alert(err.message || "حدث خطأ في الطلب");
+    return null;
+  }
 }
 
-function drawPie(canvasId, obj){
-  const labels = Object.keys(obj), values = Object.values(obj);
-  const sum = values.reduce((a,b)=>a+b,0);
-  if(sum===0){ showNoData(canvasId); return; }
-  clearNoData(canvasId);
+function downloadFile(url) {
+  // trigger a file download without leaving the page
+  const a = document.createElement("a");
+  a.href = `${API_BASE}${url}`;
+  a.target = "_blank";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
-  const ctx = prepCanvas(canvasId);
-  new Chart(ctx, {
-    type: 'pie',
-    data: { labels, datasets: [{ label:'العدد', data: values, backgroundColor: labels.map((_,i)=>COLORS[i%COLORS.length]) }] },
-    options: { responsive:false, maintainAspectRatio:false, animation:false,
-      plugins:{ legend:{ position:'right', labels:{ font:{weight:'700'} } } } }
+function parseIntSafe(v, def = 0) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : def;
+}
+
+function sumValues(obj) {
+  return Object.values(obj || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+/* ----- Draw "empty" message on a canvas (when no data) ----- */
+function drawEmptyMessageOnCanvas(canvasId, message = "لا توجد بيانات لهذا الشهر") {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  // clear
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // draw message, center-ish
+  ctx.save();
+  ctx.fillStyle = "#999";
+  ctx.font = "16px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const x = canvas.width / 2;
+  const y = canvas.height / 2;
+  ctx.fillText(message, x, y);
+  ctx.restore();
+}
+
+/* ---------- Charts (Chart.js) ---------- */
+const charts = {
+  cabinets: null,
+  assets: null,
+  spares: null,
+};
+
+function destroyChart(key) {
+  if (charts[key]) {
+    try { charts[key].destroy(); } catch {}
+    charts[key] = null;
+  }
+}
+
+function makePieChart(canvasId, labels, values, title) {
+  const ctx = document.getElementById(canvasId)?.getContext("2d");
+  if (!ctx) return null;
+  return new Chart(ctx, {
+    type: "pie",
+    data: { labels, datasets: [{ data: values }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: true, position: "bottom" },
+        title: { display: !!title, text: title },
+      },
+      animation: { duration: 300 },
+    },
   });
 }
 
-function drawBar(canvasId, obj){
-  const labels = Object.keys(obj), values = Object.values(obj);
-  const sum = values.reduce((a,b)=>a+b,0);
-  if(sum===0){ showNoData(canvasId); return; }
-  clearNoData(canvasId);
-
-  const ctx = prepCanvas(canvasId);
-  const maxVal = Math.max(1, ...values);
-  const yMax  = Math.ceil(maxVal * 1.2);          // headroom
-  const step  = Math.max(1, Math.ceil(yMax/5));   // nice ticks
-
-  new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets: [{ label:'العدد', data: values, backgroundColor: labels.map((_,i)=>COLORS[i%COLORS.length]) }] },
-    options: { responsive:false, maintainAspectRatio:false, animation:false,
-      plugins:{ legend:{ display:false } },
-      scales:{ y:{ beginAtZero:true, max:yMax, ticks:{ precision:0, stepSize:step } } } }
+function makeBarChart(canvasId, labels, values, title) {
+  const ctx = document.getElementById(canvasId)?.getContext("2d");
+  if (!ctx) return null;
+  return new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ data: values }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        title: { display: !!title, text: title }
+      },
+      animation: { duration: 300 },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
   });
 }
 
-async function refreshCharts(){
-  const y = Number($('#chart-year').value || nowYM().y);
-  const m = Number($('#chart-month').value || nowYM().m);
-  let data = await fetchJSON(`/api/stats/cabinets?year=${y}&month=${m}`); drawPie('viz-cab', data);
-  data = await fetchJSON(`/api/stats/assets?year=${y}&month=${m}`);       drawBar('viz-ast', data);
-  data = await fetchJSON(`/api/stats/spares?year=${y}&month=${m}`);       drawBar('viz-spa', data);
+/* ---------- Month/Year controls ---------- */
+function getSelectedYearMonth() {
+  const yearEl = document.getElementById("year");
+  const monthEl = document.getElementById("month");
+  const year = parseIntSafe(yearEl?.value, new Date().getFullYear());
+  const month = parseIntSafe(monthEl?.value, new Date().getMonth() + 1);
+  return { year, month };
 }
-$('#btn-refresh-charts').onclick = refreshCharts;
-refreshCharts();
 
-/* ===== Monthly / Quarterly exports ===== */
-$('#btn-monthly').onclick = ()=>{
-  const y = Number($('#sum-year').value || nowYM().y);
-  const m = Number($('#sum-month').value || nowYM().m);
-  window.location = `/api/export/monthly_summary.xlsx?year=${y}&month=${m}`;
-};
-$('#btn-quarterly').onclick = ()=>{
-  const y = Number($('#q-year').value || nowYM().y);
-  const m = Number($('#q-month').value || nowYM().m);
-  window.location = `/api/export/quarterly_summary.xlsx?start_year=${y}&start_month=${m}`;
-};
+/* ---------- Charts updater ---------- */
+async function updateCharts() {
+  const { year, month } = getSelectedYearMonth();
+
+  // Cabinets
+  const cab = await fetchJSON(`/api/stats/cabinets?year=${year}&month=${month}`);
+  if (cab && sumValues(cab) > 0) {
+    destroyChart("cabinets");
+    charts.cabinets = makePieChart(
+      "cabinetChart",
+      Object.keys(cab),
+      Object.values(cab),
+      "نِسَب إنجاز الكبائن"
+    );
+  } else {
+    destroyChart("cabinets");
+    drawEmptyMessageOnCanvas("cabinetChart");
+  }
+
+  // Assets
+  const ast = await fetchJSON(`/api/stats/assets?year=${year}&month=${month}`);
+  if (ast && sumValues(ast) > 0) {
+    destroyChart("assets");
+    charts.assets = makeBarChart(
+      "assetChart",
+      Object.keys(ast),
+      Object.values(ast),
+      "الأصول المؤهلة"
+    );
+  } else {
+    destroyChart("assets");
+    drawEmptyMessageOnCanvas("assetChart");
+  }
+
+  // Spares
+  const spa = await fetchJSON(`/api/stats/spares?year=${year}&month=${month}`);
+  if (spa && sumValues(spa) > 0) {
+    destroyChart("spares");
+    charts.spares = makeBarChart(
+      "spareChart",
+      Object.keys(spa),
+      Object.values(spa),
+      "قطع الغيار"
+    );
+  } else {
+    destroyChart("spares");
+    drawEmptyMessageOnCanvas("spareChart");
+  }
+}
+
+/* ---------- Excel Exports ---------- */
+function wireExports() {
+  // Issue (full + summary)
+  document.getElementById("btnIssueFull")?.addEventListener("click", () => {
+    downloadFile("/api/export/issue/full.xlsx");
+  });
+  document.getElementById("btnIssueSummary")?.addEventListener("click", () => {
+    downloadFile("/api/export/issue/summary.xlsx");
+  });
+
+  // Monthly/Quarterly summaries
+  document.getElementById("btnMonthlySummary")?.addEventListener("click", () => {
+    const { year, month } = getSelectedYearMonth();
+    downloadFile(`/api/export/monthly_summary.xlsx?year=${year}&month=${month}`);
+  });
+
+  document.getElementById("btnQuarterlySummary")?.addEventListener("click", () => {
+    const y = parseIntSafe(document.getElementById("qYear")?.value, new Date().getFullYear());
+    const m = parseIntSafe(document.getElementById("qMonth")?.value, new Date().getMonth() + 1);
+    downloadFile(`/api/export/quarterly_summary.xlsx?start_year=${y}&start_month=${m}`);
+  });
+
+  // Per-module monthly exports
+  document.getElementById("btnExportCabinets")?.addEventListener("click", () => {
+    const { year, month } = getSelectedYearMonth();
+    downloadFile(`/api/export/cabinets.xlsx?year=${year}&month=${month}`);
+  });
+  document.getElementById("btnExportAssets")?.addEventListener("click", () => {
+    const { year, month } = getSelectedYearMonth();
+    downloadFile(`/api/export/assets.xlsx?year=${year}&month=${month}`);
+  });
+  document.getElementById("btnExportSpares")?.addEventListener("click", () => {
+    const { year, month } = getSelectedYearMonth();
+    downloadFile(`/api/export/spares.xlsx?year=${year}&month=${month}`);
+  });
+}
+
+/* ---------- Forms: صرف (Issue) ---------- */
+function wireIssueForm() {
+  const form = document.getElementById("issueForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      item_name: form.item_name?.value || "",
+      model: form.model?.value || null,
+      serial: form.serial?.value || null,
+      status: form.status?.value || null,
+      quantity: parseIntSafe(form.quantity?.value, 1),
+      location: form.location?.value || null,
+      requester: form.requester?.value || null,
+      issue_date: form.issue_date?.value, // YYYY-MM-DD
+      qualified_by: form.qualified_by?.value || null,
+      receiver: form.receiver?.value || null,
+    };
+    const ok = await sendJSON("/api/issue", "POST", payload);
+    if (ok) {
+      alert("تم حفظ الصرف بنجاح");
+      form.reset();
+    }
+  });
+}
+
+/* ---------- Forms: توريد/تأهيل → كبائن ---------- */
+function wireCabinets() {
+  const form = document.getElementById("cabinetForm");
+  const searchForm = document.getElementById("cabinetSearchForm");
+  const updateBtn = document.getElementById("cabinetUpdateBtn");
+  let editingId = null;
+
+  // Create
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      cabinet_type: form.cabinet_type?.value || "",
+      code: form.cab_code?.value || null,
+      rehab_date: form.cab_rehab_date?.value,
+      qualified_by: form.cab_qualified_by?.value || null,
+      location: form.cab_location?.value || null,
+      receiver: form.cab_receiver?.value || null,
+      issue_date: form.cab_issue_date?.value || null,
+      notes: form.cab_notes?.value || null,
+    };
+    const ok = await sendJSON("/api/cabinets", "POST", payload);
+    if (ok) {
+      alert("تم حفظ بيانات الكبائن");
+      form.reset();
+      editingId = null;
+      await updateCharts();
+    }
+  });
+
+  // Find by code (الترميز)
+  searchForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = searchForm.cab_search_code?.value || "";
+    if (!code) return alert("أدخل الترميز للبحث");
+    const data = await fetchJSON(`/api/cabinets/find?code=${encodeURIComponent(code)}`);
+    if (!data) return alert("لم يتم العثور");
+    // fill form
+    editingId = data.id;
+    form.cabinet_type && (form.cabinet_type.value = data.cabinet_type || "");
+    form.cab_code && (form.cab_code.value = data.code || "");
+    form.cab_rehab_date && (form.cab_rehab_date.value = data.rehab_date || "");
+    form.cab_qualified_by && (form.cab_qualified_by.value = data.qualified_by || "");
+    form.cab_location && (form.cab_location.value = data.location || "");
+    form.cab_receiver && (form.cab_receiver.value = data.receiver || "");
+    form.cab_issue_date && (form.cab_issue_date.value = data.issue_date || "");
+    form.cab_notes && (form.cab_notes.value = data.notes || "");
+  });
+
+  // Update current record
+  updateBtn?.addEventListener("click", async () => {
+    if (!editingId) return alert("ابحث عن سجل أولاً");
+    const payload = {
+      id: editingId,
+      cabinet_type: form.cabinet_type?.value || "",
+      code: form.cab_code?.value || null,
+      rehab_date: form.cab_rehab_date?.value,
+      qualified_by: form.cab_qualified_by?.value || null,
+      location: form.cab_location?.value || null,
+      receiver: form.cab_receiver?.value || null,
+      issue_date: form.cab_issue_date?.value || null,
+      notes: form.cab_notes?.value || null,
+    };
+    const ok = await sendJSON(`/api/cabinets/${editingId}`, "PUT", payload);
+    if (ok) {
+      alert("تم تحديث بيانات الكبائن");
+      await updateCharts();
+    }
+  });
+}
+
+/* ---------- Forms: توريد/تأهيل → الأصول ---------- */
+function wireAssets() {
+  const form = document.getElementById("assetForm");
+  const searchForm = document.getElementById("assetSearchForm");
+  const updateBtn = document.getElementById("assetUpdateBtn");
+  let editingId = null;
+
+  // Create
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      asset_type: form.asset_type?.value || "",
+      model: form.asset_model?.value || null,
+      serial_or_code: form.asset_serial?.value || null,
+      quantity: parseIntSafe(form.asset_quantity?.value, 1),
+      prev_location: form.asset_prev_location?.value || null,
+      supply_date: form.asset_supply_date?.value,
+      qualified_by: form.asset_qualified_by?.value || null,
+      lifted: form.asset_lifted?.checked ?? null,
+      inspector: form.asset_inspector?.value || null,
+      tested: form.asset_tested?.checked ?? null,
+      issue_date: form.asset_issue_date?.value || null,
+      current_location: form.asset_current_location?.value || null,
+      requester: form.asset_requester?.value || null,
+      receiver: form.asset_receiver?.value || null,
+      notes: form.asset_notes?.value || null,
+    };
+    const ok = await sendJSON("/api/assets", "POST", payload);
+    if (ok) {
+      alert("تم حفظ بيانات الأصول");
+      form.reset();
+      editingId = null;
+      await updateCharts();
+    }
+  });
+
+  // Find by serial/code (الرقم التسلسلي/الترميز)
+  searchForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const serial = searchForm.asset_search_serial?.value || "";
+    if (!serial) return alert("أدخل الرقم التسلسلي/الترميز للبحث");
+    const data = await fetchJSON(`/api/assets/find?serial=${encodeURIComponent(serial)}`);
+    if (!data) return alert("لم يتم العثور");
+    editingId = data.id;
+    // fill
+    form.asset_type && (form.asset_type.value = data.asset_type || "");
+    form.asset_model && (form.asset_model.value = data.model || "");
+    form.asset_serial && (form.asset_serial.value = data.serial_or_code || "");
+    form.asset_quantity && (form.asset_quantity.value = data.quantity ?? 1);
+    form.asset_prev_location && (form.asset_prev_location.value = data.prev_location || "");
+    form.asset_supply_date && (form.asset_supply_date.value = data.supply_date || "");
+    form.asset_qualified_by && (form.asset_qualified_by.value = data.qualified_by || "");
+    if (form.asset_lifted) form.asset_lifted.checked = !!data.lifted;
+    form.asset_inspector && (form.asset_inspector.value = data.inspector || "");
+    if (form.asset_tested) form.asset_tested.checked = !!data.tested;
+    form.asset_issue_date && (form.asset_issue_date.value = data.issue_date || "");
+    form.asset_current_location && (form.asset_current_location.value = data.current_location || "");
+    form.asset_requester && (form.asset_requester.value = data.requester || "");
+    form.asset_receiver && (form.asset_receiver.value = data.receiver || "");
+    form.asset_notes && (form.asset_notes.value = data.notes || "");
+  });
+
+  // Update
+  updateBtn?.addEventListener("click", async () => {
+    if (!editingId) return alert("ابحث عن سجل أولاً");
+    const payload = {
+      id: editingId,
+      asset_type: form.asset_type?.value || "",
+      model: form.asset_model?.value || null,
+      serial_or_code: form.asset_serial?.value || null,
+      quantity: parseIntSafe(form.asset_quantity?.value, 1),
+      prev_location: form.asset_prev_location?.value || null,
+      supply_date: form.asset_supply_date?.value,
+      qualified_by: form.asset_qualified_by?.value || null,
+      lifted: form.asset_lifted?.checked ?? null,
+      inspector: form.asset_inspector?.value || null,
+      tested: form.asset_tested?.checked ?? null,
+      issue_date: form.asset_issue_date?.value || null,
+      current_location: form.asset_current_location?.value || null,
+      requester: form.asset_requester?.value || null,
+      receiver: form.asset_receiver?.value || null,
+      notes: form.asset_notes?.value || null,
+    };
+    const ok = await sendJSON(`/api/assets/${editingId}`, "PUT", payload);
+    if (ok) {
+      alert("تم تحديث بيانات الأصل");
+      await updateCharts();
+    }
+  });
+}
+
+/* ---------- Forms: توريد/تأهيل → قطع الغيار ---------- */
+function wireSpares() {
+  const form = document.getElementById("spareForm");
+  const searchForm = document.getElementById("spareSearchForm");
+  const updateBtn = document.getElementById("spareUpdateBtn");
+  let editingId = null;
+
+  // Create
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      part_category: form.spare_category?.value || "",
+      part_name: form.spare_name?.value || null,
+      part_model: form.spare_model?.value || null,
+      quantity: parseIntSafe(form.spare_quantity?.value, 1),
+      serial: form.spare_serial?.value || null,
+      source: form.spare_source?.value || null,
+      qualified_by: form.spare_qualified_by?.value || null,
+      rehab_date: form.spare_rehab_date?.value,
+      tested: form.spare_tested?.checked ?? null,
+      notes: form.spare_notes?.value || null,
+    };
+    const ok = await sendJSON("/api/spares", "POST", payload);
+    if (ok) {
+      alert("تم حفظ بيانات قطع الغيار");
+      form.reset();
+      editingId = null;
+      await updateCharts();
+    }
+  });
+
+  // Find by serial (الرقم التسلسلي)
+  searchForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const serial = searchForm.spare_search_serial?.value || "";
+    if (!serial) return alert("أدخل الرقم التسلسلي للبحث");
+    const data = await fetchJSON(`/api/spares/find?serial=${encodeURIComponent(serial)}`);
+    if (!data) return alert("لم يتم العثور");
+    editingId = data.id;
+    // fill
+    form.spare_category && (form.spare_category.value = data.part_category || "");
+    form.spare_name && (form.spare_name.value = data.part_name || "");
+    form.spare_model && (form.spare_model.value = data.part_model || "");
+    form.spare_quantity && (form.spare_quantity.value = data.quantity ?? 1);
+    form.spare_serial && (form.spare_serial.value = data.serial || "");
+    form.spare_source && (form.spare_source.value = data.source || "");
+    form.spare_qualified_by && (form.spare_qualified_by.value = data.qualified_by || "");
+    form.spare_rehab_date && (form.spare_rehab_date.value = data.rehab_date || "");
+    if (form.spare_tested) form.spare_tested.checked = !!data.tested;
+    form.spare_notes && (form.spare_notes.value = data.notes || "");
+  });
+
+  // Update
+  updateBtn?.addEventListener("click", async () => {
+    if (!editingId) return alert("ابحث عن سجل أولاً");
+    const payload = {
+      id: editingId,
+      part_category: form.spare_category?.value || "",
+      part_name: form.spare_name?.value || null,
+      part_model: form.spare_model?.value || null,
+      quantity: parseIntSafe(form.spare_quantity?.value, 1),
+      serial: form.spare_serial?.value || null,
+      source: form.spare_source?.value || null,
+      qualified_by: form.spare_qualified_by?.value || null,
+      rehab_date: form.spare_rehab_date?.value,
+      tested: form.spare_tested?.checked ?? null,
+      notes: form.spare_notes?.value || null,
+    };
+    const ok = await sendJSON(`/api/spares/${editingId}`, "PUT", payload);
+    if (ok) {
+      alert("تم تحديث بيانات قطعة الغيار");
+      await updateCharts();
+    }
+  });
+}
+
+/* ---------- Wire buttons ---------- */
+function wireButtons() {
+  const refresh = document.getElementById("refreshChartsBtn") || document.getElementById("updateChartsBtn");
+  refresh?.addEventListener("click", updateCharts);
+
+  // Auto-update once on load
+  updateCharts();
+
+  wireExports();
+  wireIssueForm();
+  wireCabinets();
+  wireAssets();
+  wireSpares();
+}
+
+/* ---------- Init ---------- */
+document.addEventListener("DOMContentLoaded", wireButtons);

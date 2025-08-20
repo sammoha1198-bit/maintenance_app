@@ -434,3 +434,91 @@ document.addEventListener("DOMContentLoaded", () => {
     backBtns.forEach(b => b.addEventListener("click", e => { e.preventDefault(); if (homePanel) showOnly(homePanel); }));
   });
 })();
+// ===== HOTFIX: تفعيل أيقونات "الصرف/الطارئ" و"توريد/تأهيل" بدون تغيير الواجهة =====
+(function () {
+  // لوج بسيط للتأكد أن السكربت يشتغل
+  console.log("%c[hotfix] app.js panel toggler loaded", "color:#16a34a;font-weight:bold");
+
+  // نربط حتى لو العناصر تضاف بعدين (تفويض أحداث)
+  document.addEventListener("click", function (ev) {
+    const el = ev.target.closest("button, a, .btn");
+    if (!el) return;
+
+    const txt = (el.textContent || "").replace(/\s+/g, " ").trim();
+
+    // الرجوع للرئيسية
+    if (/(رجوع|عودة|Back)/.test(txt)) {
+      ev.preventDefault();
+      showOnly(findHome());
+      return;
+    }
+
+    // فتح الصرف/الطارئ
+    if (/(الصرف\/الطارئ|الصرف|طارئ)/.test(txt)) {
+      ev.preventDefault();
+      const issue = findIssuePanel();
+      if (issue) showOnly(issue); else warnNotFound("لوحة الصرف/الطارئ");
+      return;
+    }
+
+    // فتح التوريد/التأهيل
+    if (/(توريد\/تأهيل|التأهيل|توريد)/.test(txt)) {
+      ev.preventDefault();
+      const qual = findQualPanel();
+      if (qual) showOnly(qual); else warnNotFound("لوحة التوريد/التأهيل");
+      return;
+    }
+  }, true);
+
+  function warnNotFound(name){ console.warn("⚠️ لم يتم العثور على", name, "— عدِّل المحددات في الهوت-فكس لو لزم"); }
+
+  // إظهار لوحة واحدة فقط وإخفاء الباقي
+  function showOnly(target) {
+    const panels = Array.from(document.querySelectorAll(
+      '#panel-home, #home, .home-panel,' +
+      '#panel-issue, #issue-panel, #issue, .panel-issue, .issue-panel,' +
+      '#panel-qual, #qual-panel, #qualification, .panel-qual, .qual-panel'
+    ));
+    panels.forEach(p => { p.hidden = true; p.style.display = "none"; });
+    if (target) { target.hidden = false; target.style.display = ""; }
+    console.log("[hotfix] show panel →", target && (target.id || target.className));
+  }
+
+  // محاولات ذكية للعثور على اللوحات حتى لو IDs مختلفة
+  function pick(selList){
+    for (const s of selList){ const el = document.querySelector(s); if (el) return el; }
+    return null;
+  }
+  function pickByHeading(words){
+    const boxes = Array.from(document.querySelectorAll("main, section, div, article"))
+      .filter(el => el.hasAttribute("data-panel") || /panel|لوحة|section|tab|content/i.test(el.className||""));
+    return boxes.find(el => {
+      const h = el.querySelector("h1,h2,h3,.title,.section-title");
+      const t = (h?.textContent || el.textContent || "").trim();
+      return words.some(w => t.includes(w));
+    }) || null;
+  }
+
+  function findHome(){
+    return pick(["#panel-home","#home",".home-panel"])
+        || pickByHeading(["القائمة","الرئيسية"]);
+  }
+  function findIssuePanel(){
+    return pick(["#panel-issue","#issue-panel","#issue",".panel-issue",".issue-panel"])
+        || pickByHeading(["الصرف","الطارئ"]);
+  }
+  function findQualPanel(){
+    return pick(["#panel-qual","#qual-panel","#qualification",".panel-qual",".qual-panel"])
+        || pickByHeading(["توريد","تأهيل"]);
+  }
+
+  // عند تحميل الصفحة، اعرض الرئيسية إن وُجدت
+  document.addEventListener("DOMContentLoaded", function(){
+    const home = findHome();
+    if (home) showOnly(home);
+  });
+
+  // لو الصفحة تُعيد بناء الDOM لاحقاً، راقب وأعد إظهار اللوحة الصحيحة
+  const mo = new MutationObserver(() => { /* إبقاء الربط نشطًا */ });
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+})();

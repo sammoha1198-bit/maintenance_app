@@ -1,18 +1,16 @@
-/* ============================== app.js =============================== */
+/* ============================== app.js v5 ============================== */
 "use strict";
-
-/* -------- Config -------- */
 const API_BASE = ""; // same-origin for local + Render
 
-/* -------- Helpers -------- */
-const qs  = (s, el=document) => el.querySelector(s);
-const qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
+/* ----------------- helpers ----------------- */
+const qs  = (s, el=document)=>el.querySelector(s);
+const qsa = (s, el=document)=>Array.from(el.querySelectorAll(s));
 const log = (...a)=>console.log("[app]",...a);
 const err = (...a)=>console.error("[app]",...a);
 
 async function getJSON(url){
   try{
-    const r = await fetch(url, { credentials:"same-origin" });
+    const r=await fetch(url,{credentials:"same-origin"});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }catch(e){ err("GET failed:", url, e); return null; }
@@ -21,175 +19,192 @@ function download(url){ window.location.href = url; }
 
 function setFixedCanvas(c, h=320){
   if(!c) return;
-  c.style.width = "100%";
-  c.style.height = `${h}px`;
+  c.style.width="100%";
+  c.style.height=`${h}px`;
   if(!c.getAttribute("height")) c.setAttribute("height", String(h));
 }
 
-/* -------- Panel / Block toggling -------- */
+/* ----------------- panels/blocks ----------------- */
 const PANELS = {
   home : ()=>qs("#panel-home"),
   issue: ()=>qs("#panel-issue"),
   rehab: ()=>qs("#panel-rehab"),
 };
 function showPanel(name){
-  const all = [PANELS.home(), PANELS.issue(), PANELS.rehab()].filter(Boolean);
-  all.forEach(p=>{ p.hidden = true; p.style.display="none"; });
-  const t = PANELS[name] && PANELS[name]();
-  if(t){ t.hidden = false; t.style.display=""; }
+  const all=[PANELS.home(),PANELS.issue(),PANELS.rehab()].filter(Boolean);
+  all.forEach(p=>{p.hidden=true;p.style.display="none";});
+  const t=PANELS[name]&&PANELS[name]();
+  if(t){t.hidden=false;t.style.display="";}
 }
-
 const BLOCKS = {
   cab: ()=>qs("#block-cab"),
   ast: ()=>qs("#block-ast"),
   spa: ()=>qs("#block-spa"),
 };
 function showBlock(name){
-  const all = [BLOCKS.cab(), BLOCKS.ast(), BLOCKS.spa()].filter(Boolean);
-  all.forEach(b=>{ b.classList.add("hidden"); });
-  const t = BLOCKS[name] && BLOCKS[name]();
+  const all=[BLOCKS.cab(),BLOCKS.ast(),BLOCKS.spa()].filter(Boolean);
+  all.forEach(b=>b.classList.add("hidden"));
+  const t=BLOCKS[name]&&BLOCKS[name]();
   if(t) t.classList.remove("hidden");
 }
 
-/* -------- Date inputs -------- */
+/* ----------------- date helpers ----------------- */
 function getYearMonth(){
-  const now = new Date();
-  const y = parseInt(qs("#year")?.value || now.getFullYear(), 10);
-  const m = parseInt(qs("#month")?.value || (now.getMonth()+1), 10);
-  return { year: y, month: m };
+  const now=new Date();
+  const y=parseInt(qs("#year")?.value || now.getFullYear(),10);
+  const m=parseInt(qs("#month")?.value || (now.getMonth()+1),10);
+  return {year:y, month:m};
+}
+/* ensure objects even if API returns null */
+function mapToObject(keys, data){
+  const o={};
+  keys.forEach(k=>{ o[k]=Number((data||{})[k]||0); });
+  return o;
 }
 
-/* -------- Charts (Chart.js) -------- */
-let CH = { cab:null, ast:null, spa:null };
-
-function destroyChart(ref){ try{ ref?.destroy?.(); }catch{} }
+/* ----------------- charts ----------------- */
+let CH={cab:null, ast:null, spa:null};
+function destroyChart(ref){ try{ref?.destroy?.();}catch{} }
 
 function drawCabPie(data){
-  const c = qs("#cabPie"); if(!c || !window.Chart || !data) return;
-  setFixedCanvas(c, 320); destroyChart(CH.cab);
-  const labels = ["ATS","AMF","HYBRID","حماية انفرتر","ظفيرة تحكم"];
-  const values = labels.map(k=> Number(data[k]||0));
-  CH.cab = new Chart(c.getContext("2d"), {
+  const c=qs("#cabPie"); if(!c || !window.Chart) return;
+  setFixedCanvas(c,320); destroyChart(CH.cab);
+  const labels=["ATS","AMF","HYBRID","حماية انفرتر","ظفيرة تحكم"];
+  const safe=mapToObject(labels, data);
+  const values=labels.map(k=>safe[k]);
+  CH.cab=new Chart(c.getContext("2d"),{
     type:"pie",
-    data:{ labels, datasets:[{ data: values }] },
-    options:{ responsive:true, maintainAspectRatio:false, animation:{duration:600} }
+    data:{labels,datasets:[{data:values}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500}}
   });
 }
-
 function drawAssetsBar(data){
-  const c = qs("#assetsBar"); if(!c || !window.Chart || !data) return;
-  setFixedCanvas(c, 320); destroyChart(CH.ast);
-  const labels = ["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"];
-  const values = labels.map(k=> Number(data[k]||0));
-  CH.ast = new Chart(c.getContext("2d"), {
+  const c=qs("#assetsBar"); if(!c || !window.Chart) return;
+  setFixedCanvas(c,320); destroyChart(CH.ast);
+  const labels=["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"];
+  const safe=mapToObject(labels, data);
+  const values=labels.map(k=>safe[k]);
+  CH.ast=new Chart(c.getContext("2d"),{
     type:"bar",
-    data:{ labels, datasets:[{ label:"عدد", data: values }] },
-    options:{
-      responsive:true, maintainAspectRatio:false, animation:{duration:600},
-      scales:{ y:{ beginAtZero:true, suggestedMax: Math.max(5, Math.max(...values)+1) } }
-    }
+    data:{labels,datasets:[{label:"عدد",data:values}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},scales:{y:{beginAtZero:true}}}
   });
 }
-
 function drawSparesBar(data){
-  const c = qs("#sparesBar"); if(!c || !window.Chart || !data) return;
-  setFixedCanvas(c, 320); destroyChart(CH.spa);
-  const labels = ["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"];
-  const values = labels.map(k=> Number(data[k]||0));
-  CH.spa = new Chart(c.getContext("2d"), {
+  const c=qs("#sparesBar"); if(!c || !window.Chart) return;
+  setFixedCanvas(c,320); destroyChart(CH.spa);
+  const labels=["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"];
+  const safe=mapToObject(labels, data);
+  const values=labels.map(k=>safe[k]);
+  CH.spa=new Chart(c.getContext("2d"),{
     type:"bar",
-    data:{ labels, datasets:[{ label:"عدد", data: values }] },
-    options:{
-      responsive:true, maintainAspectRatio:false, animation:{duration:600},
-      scales:{ y:{ beginAtZero:true, suggestedMax: Math.max(5, Math.max(...values)+1) } }
-    }
+    data:{labels,datasets:[{label:"عدد",data:values}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},scales:{y:{beginAtZero:true}}}
   });
 }
 
+/* all charts via rehab_date */
 async function updateCharts(){
-  const { year, month } = getYearMonth();
-  log("update charts", {year, month});
-  const [cab, ast, spa] = await Promise.all([
-    getJSON(`${API_BASE}/api/stats/cabinets?year=${year}&month=${month}`),
-    getJSON(`${API_BASE}/api/stats/assets?year=${year}&month=${month}`),
-    getJSON(`${API_BASE}/api/stats/spares?year=${year}&month=${month}`),
+  const {year, month}=getYearMonth();
+  log("charts (by rehab_date)",{year,month});
+
+  // pass date_field=rehab_date so backend groups/filters by تاريخ التأهيل
+  const q=`year=${year}&month=${month}&date_field=rehab_date`;
+  const [cab,ast,spa]=await Promise.all([
+    getJSON(`${API_BASE}/api/stats/cabinets?${q}`),
+    getJSON(`${API_BASE}/api/stats/assets?${q}`),
+    getJSON(`${API_BASE}/api/stats/spares?${q}`)
   ]);
-  drawCabPie(cab);
-  drawAssetsBar(ast);
-  drawSparesBar(spa);
+
+  drawCabPie(cab||{});
+  drawAssetsBar(ast||{});
+  drawSparesBar(spa||{});
 }
 
-/* -------- Exports -------- */
+/* ----------------- exports (by rehab_date) ----------------- */
 function exportMonthly(){
-  const {year, month} = getYearMonth();
-  download(`${API_BASE}/api/export/monthly_summary.xlsx?year=${year}&month=${month}`);
+  const {year,month}=getYearMonth();
+  download(`${API_BASE}/api/export/monthly_summary.xlsx?year=${year}&month=${month}&date_field=rehab_date`);
 }
 function exportQuarterly(){
-  const {year, month} = getYearMonth();
-  download(`${API_BASE}/api/export/quarterly_summary.xlsx?start_year=${year}&start_month=${month}`);
+  const {year,month}=getYearMonth();
+  // quarter start is month in inputs; date_field forces rehab_date basis
+  download(`${API_BASE}/api/export/quarterly_summary.xlsx?start_year=${year}&start_month=${month}&date_field=rehab_date`);
 }
-// Issue reports
-function exportIssueFull(){ download(`${API_BASE}/api/export/issue/full.xlsx`); }
-function exportIssueSummary(){ download(`${API_BASE}/api/export/issue/summary.xlsx`); }
-// Section exports (until today)
-function exportCabToDate(){
-  const y = parseInt(qs("#cab-year")?.value || new Date().getFullYear(), 10);
-  const m = parseInt(qs("#cab-month")?.value || (new Date().getMonth()+1), 10);
-  download(`${API_BASE}/api/export/cabinets.xlsx?year=${y}&month=${m}`);
-}
-function exportAstToDate(){
-  const y = parseInt(qs("#ast-year")?.value || new Date().getFullYear(), 10);
-  const m = parseInt(qs("#ast-month")?.value || (new Date().getMonth()+1), 10);
-  download(`${API_BASE}/api/export/assets.xlsx?year=${y}&month=${m}`);
-}
-function exportSpaToDate(){
-  const y = parseInt(qs("#spa-year")?.value || new Date().getFullYear(), 10);
-  const m = parseInt(qs("#spa-month")?.value || (new Date().getMonth()+1), 10);
-  download(`${API_BASE}/api/export/spares.xlsx?year=${y}&month=${m}`);
-}
+/* optional per-section to-date exports also by rehab_date month/year if you later add buttons
+   (kept minimal here; monthly/quarterly above should be enough) */
 
-/* -------- Init / Bindings -------- */
-document.addEventListener("DOMContentLoaded", () => {
-  log("app.js ready");
+/* ----------------- global search (single box) ----------------- */
+async function globalSearch(){
+  const q=(qs("#search-all")?.value||"").trim();
+  const resBox=qs("#search-results");
+  if(!resBox) return;
+  if(!q){ resBox.innerHTML=`<div class="muted">اكتب الترميز أو الرقم التسلسلي للبحث.</div>`; return; }
 
-  // Default landing panel
-  showPanel("home");
+  resBox.innerHTML=`<div class="muted">جارِ البحث…</div>`;
 
-  // Defaults for year/month
-  const now = new Date();
+  // run in parallel: cabinets by code, assets by serial, spares by serial
+  const [cab, ast, spa]=await Promise.all([
+    getJSON(`${API_BASE}/api/cabinets/find?code=${encodeURIComponent(q)}`),
+    getJSON(`${API_BASE}/api/assets/find?serial=${encodeURIComponent(q)}`),
+    getJSON(`${API_BASE}/api/spares/find?serial=${encodeURIComponent(q)}`)
+  ]);
+
+  const parts=[];
+  if(cab){ parts.push(renderCard("الكبائن", cab)); }
+  if(ast){ parts.push(renderCard("الأصول", ast)); }
+  if(spa){ parts.push(renderCard("قطع الغيار", spa)); }
+
+  if(parts.length===0){
+    resBox.innerHTML=`<div class="muted">لا توجد نتائج مطابقة.</div>`;
+  }else{
+    resBox.innerHTML=parts.join("");
+  }
+}
+function renderCard(title, obj){
+  const pretty=escapeHtml(JSON.stringify(obj,null,2));
+  return `<div class="search-card">
+    <div style="font-weight:700;margin-bottom:6px">${title}</div>
+    <pre style="margin:0;white-space:pre-wrap">${pretty}</pre>
+  </div>`;
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+/* ----------------- init ----------------- */
+document.addEventListener("DOMContentLoaded", ()=>{
+  log("app v5 ready");
+
+  // default year/month
+  const now=new Date();
   if(qs("#year")  && !qs("#year").value)  qs("#year").value  = String(now.getFullYear());
   if(qs("#month") && !qs("#month").value) qs("#month").value = String(now.getMonth()+1);
 
-  // Top tiles
-  qs("#open-issue")?.addEventListener("click", e => { e.preventDefault(); showPanel("issue"); });
-  qs("#open-qual") ?.addEventListener("click", e => { e.preventDefault(); showPanel("rehab"); showBlock("cab"); updateCharts(); });
+  // main icons
+  qs("#open-issue")?.addEventListener("click",e=>{e.preventDefault();showPanel("issue");});
+  qs("#open-qual") ?.addEventListener("click",e=>{e.preventDefault();showPanel("rehab");showBlock("cab");updateCharts();});
 
-  // Back buttons
-  qs("#back-home")  ?.addEventListener("click", e => { e.preventDefault(); showPanel("home"); });
-  qs("#back-home-2")?.addEventListener("click", e => { e.preventDefault(); showPanel("home"); });
+  // back
+  qs("#back-home")  ?.addEventListener("click",e=>{e.preventDefault();showPanel("home");});
+  qs("#back-home-2")?.addEventListener("click",e=>{e.preventDefault();showPanel("home");});
 
-  // Sub tabs inside rehab
-  qs("#sub-cab")?.addEventListener("click", e => { e.preventDefault(); showBlock("cab");   });
-  qs("#sub-ast")?.addEventListener("click", e => { e.preventDefault(); showBlock("ast");   });
-  qs("#sub-spa")?.addEventListener("click", e => { e.preventDefault(); showBlock("spa");   });
+  // sub-tabs in rehab
+  qs("#sub-cab")?.addEventListener("click",e=>{e.preventDefault();showBlock("cab");});
+  qs("#sub-ast")?.addEventListener("click",e=>{e.preventDefault();showBlock("ast");});
+  qs("#sub-spa")?.addEventListener("click",e=>{e.preventDefault();showBlock("spa");});
 
-  // Charts + summaries
-  qs("#btnUpdateCharts")    ?.addEventListener("click", e => { e.preventDefault(); updateCharts(); });
-  qs("#btnMonthlySummary")  ?.addEventListener("click", e => { e.preventDefault(); exportMonthly(); });
-  qs("#btnQuarterlySummary")?.addEventListener("click", e => { e.preventDefault(); exportQuarterly(); });
+  // charts & summaries (rehab_date basis)
+  qs("#btnUpdateCharts")    ?.addEventListener("click",e=>{e.preventDefault();updateCharts();});
+  qs("#btnMonthlySummary")  ?.addEventListener("click",e=>{e.preventDefault();exportMonthly();});
+  qs("#btnQuarterlySummary")?.addEventListener("click",e=>{e.preventDefault();exportQuarterly();});
 
-  // Issue exports
-  qs("#btnIssueFull")   ?.addEventListener("click", e => { e.preventDefault(); exportIssueFull(); });
-  qs("#btnIssueSummary")?.addEventListener("click", e => { e.preventDefault(); exportIssueSummary(); });
+  // global search
+  qs("#search-all-btn")  ?.addEventListener("click", e=>{e.preventDefault();globalSearch();});
+  qs("#search-all-clear")?.addEventListener("click", e=>{e.preventDefault(); const i=qs("#search-all"); if(i){i.value="";} qs("#search-results").innerHTML=""; });
 
-  // Per-section exports (to date)
-  qs("#btn-cab-export")?.addEventListener("click", e => { e.preventDefault(); exportCabToDate(); });
-  qs("#btn-ast-export")?.addEventListener("click", e => { e.preventDefault(); exportAstToDate(); });
-  qs("#btn-spa-export")?.addEventListener("click", e => { e.preventDefault(); exportSpaToDate(); });
+  // initial landing
+  showPanel("home");
 
-  // Keep charts responsive width while preserving fixed height
-  window.addEventListener("resize", () => {
-    CH.cab?.resize?.(); CH.ast?.resize?.(); CH.spa?.resize?.();
-  });
+  // keep charts responsive width
+  window.addEventListener("resize", ()=>{ CH.cab?.resize?.(); CH.ast?.resize?.(); CH.spa?.resize?.(); });
 });
-/* ============================ end app.js ============================== */
+/* ============================ end app.js =============================== */

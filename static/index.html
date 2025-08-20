@@ -8,12 +8,20 @@
   <!-- خطوط + تنسيقات -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=4" />
+  <link rel="stylesheet" href="/static/styles.css?v=5" />
 
   <style>
-    /* ضمان إخفاء العناصر ذات خاصية hidden بغض النظر عن ملف CSS */
     [hidden]{display:none !important;}
-    canvas{display:block; width:100%; height:320px;}
+    canvas{display:block;width:100%;height:320px;}
+    .panel-lite{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .ghost{background:#e5e7eb;color:#111;padding:8px 12px;border:none;border-radius:8px;cursor:pointer}
+    .tile,.subtile,button{cursor:pointer}
+    input[type="text"],input[type="number"],input[type="date"],select,textarea{
+      border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;min-width:160px
+    }
+    .search-card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:6px 0;background:#fff}
+    .muted{color:#6b7280}
   </style>
 </head>
 
@@ -24,6 +32,16 @@
   </header>
 
   <main>
+    <!-- ===== بحث عام في البداية ===== -->
+    <section class="panel-lite" style="margin-bottom:12px">
+      <div class="row">
+        <input id="search-all" type="text" placeholder="بحث عام: الترميز أو الرقم التسلسلي" style="flex:1;min-width:240px" />
+        <button id="search-all-btn">بحث</button>
+        <button id="search-all-clear" class="ghost">مسح</button>
+      </div>
+      <div id="search-results" style="margin-top:8px"></div>
+    </section>
+
     <!-- ===== الصفحة الرئيسية (لوحة البداية) ===== -->
     <section class="tiles" id="panel-home" data-panel>
       <button class="tile" id="open-issue">الصرف / طارئ</button>
@@ -55,7 +73,6 @@
         <label>المستلم<input name="receiver" /></label>
         <div class="row">
           <button type="submit">حفظ</button>
-          <!-- الأزرار التي يعتمدها app.js للتقارير -->
           <button type="button" id="btnIssueFull">تقرير Excel كامل</button>
           <button type="button" id="btnIssueSummary">تقرير ملخص</button>
         </div>
@@ -67,73 +84,29 @@
     <!-- ===== لوحة التوريد/التأهيل ===== -->
     <section id="panel-rehab" class="panel" data-panel hidden>
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h2 style="margin:0">التأهيلات</h2>
+        <h2 style="margin:0">التأهيلات (حسب <b>تاريخ التأهيل</b>)</h2>
         <button class="ghost" id="back-home-2">رجوع</button>
       </div>
 
-      <!-- اختيار شهر/سنة + أزرار الملخص والرسوم (الأسماء مطابقة لما يتوقعه app.js) -->
+      <!-- اختيار شهر/سنة (ستُستخدم كـ شهر/سنة "تاريخ التأهيل") + أزرار -->
       <div class="row" style="margin-bottom:12px">
         <label>السنة <input id="year" type="number" min="2000" /></label>
         <label>الشهر <input id="month" type="number" min="1" max="12" /></label>
         <button id="btnUpdateCharts">تحديث الرسوم</button>
-        <button id="btnMonthlySummary" class="accent">توليد ملخص شهري</button>
+        <button id="btnMonthlySummary" class="ghost">توليد ملخص شهري</button>
         <button id="btnQuarterlySummary">توليد ملخص ربع سنوي</button>
       </div>
 
-      <!-- أزرار فرعية كما هي -->
+      <!-- تبويبات فرعية -->
       <div class="subtiles">
         <button class="subtile" id="sub-cab">الكبائن</button>
         <button class="subtile" id="sub-ast">الأصول</button>
         <button class="subtile" id="sub-spa">قطع الغيار</button>
-        <button class="subtile" id="btn-dup">فحص التكرارات</button>
       </div>
 
-      <!-- ===== الكــــبائن ===== -->
+      <!-- ===== الكبائن ===== -->
       <div id="block-cab" class="block hidden">
         <h3>الكبائن</h3>
-
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="cab-find-code" placeholder="أدخل الترميز (code)" />
-            <button id="cab-find-btn">بحث</button>
-            <button id="cab-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="cab-find-hint" class="muted"></small>
-        </div>
-
-        <form id="form-cab" class="grid">
-          <input type="hidden" id="cab-id" name="id" />
-          <label>نوع الكبينة
-            <select name="cabinet_type">
-              <option>ATS</option>
-              <option>AMF</option>
-              <option>HYBRID</option>
-              <option>حماية انفرتر</option>
-              <option>ظفيرة تحكم</option>
-            </select>
-          </label>
-          <label>الترميز<input name="code" /></label>
-          <label>تاريخ التأهيل<input type="date" name="rehab_date" required /></label>
-          <label>المؤهل<input name="qualified_by" /></label>
-          <label>الموقع<input name="location" /></label>
-          <label>المستلم<input name="receiver" /></label>
-          <label>تاريخ الصرف<input type="date" name="issue_date" /></label>
-          <label>ملاحظات<textarea name="notes"></textarea></label>
-          <div class="row">
-            <button type="submit">حفظ (إضافة)</button>
-            <button type="button" id="btn-cab-update">تحديث السجل</button>
-          </div>
-        </form>
-
-        <!-- تصدير شهر حتى تاريخه -->
-        <div class="row">
-          <label>شهر <input id="cab-month" type="number" min="1" max="12" /></label>
-          <label>سنة <input id="cab-year" type="number" /></label>
-          <button id="btn-cab-export">تصدير Excel (حتى اليوم)</button>
-        </div>
-
-        <!-- ملاحظة مهمة: تغيير معرف الكانفاس ليتوافق مع app.js -->
         <div class="chartwrap"><canvas id="cabPie"></canvas></div>
         <div id="list-cab" class="list"></div>
       </div>
@@ -141,68 +114,6 @@
       <!-- ===== الأصول ===== -->
       <div id="block-ast" class="block hidden">
         <h3>الأصول</h3>
-
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="ast-find-serial" placeholder="أدخل الرقم التسلسلي/الترميز" />
-            <button id="ast-find-btn">بحث</button>
-            <button id="ast-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="ast-find-hint" class="muted"></small>
-        </div>
-
-        <form id="form-ast" class="grid">
-          <input type="hidden" id="ast-id" name="id" />
-          <label>نوع الأصل
-            <select name="asset_type">
-              <option>بطاريات</option>
-              <option>موحدات</option>
-              <option>محركات</option>
-              <option>مولدات</option>
-              <option>مكيفات</option>
-              <option>أصول أخرى</option>
-            </select>
-          </label>
-          <label>المودل<input name="model" /></label>
-          <label>الرقم التسلسلي/الترميز<input name="serial_or_code" /></label>
-          <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
-          <label>الموقع السابق<input name="prev_location" /></label>
-          <label>تاريخ التوريد<input type="date" name="supply_date" required /></label>
-          <label>المؤهل<input name="qualified_by" /></label>
-          <label>الرفع
-            <select name="lifted">
-              <option value="">—</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-          </label>
-          <label>الفاحص<input name="inspector" /></label>
-          <label>الفحص
-            <select name="tested">
-              <option value="">—</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-          </label>
-          <label>تاريخ الصرف<input type="date" name="issue_date" /></label>
-          <label>الموقع الحالي<input name="current_location" /></label>
-          <label>جهة الطلب<input name="requester" /></label>
-          <label>المستلم<input name="receiver" /></label>
-          <label>ملاحظات<textarea name="notes"></textarea></label>
-          <div class="row">
-            <button type="submit">حفظ (إضافة)</button>
-            <button type="button" id="btn-ast-update">تحديث السجل</button>
-          </div>
-        </form>
-
-        <div class="row">
-          <label>شهر <input id="ast-month" type="number" min="1" max="12" /></label>
-          <label>سنة <input id="ast-year" type="number" /></label>
-          <button id="btn-ast-export">تصدير Excel (حتى اليوم)</button>
-        </div>
-
-        <!-- تغيير المعرف ليتوافق مع app.js -->
         <div class="chartwrap"><canvas id="assetsBar"></canvas></div>
         <div id="list-ast" class="list"></div>
       </div>
@@ -210,76 +121,23 @@
       <!-- ===== قطع الغيار ===== -->
       <div id="block-spa" class="block hidden">
         <h3>قطع الغيار</h3>
-
-        <div class="panel-lite">
-          <h4>بحث/تعديل</h4>
-          <div class="row">
-            <input id="spa-find-serial" placeholder="أدخل الرقم التسلسلي (إن وُجد)" />
-            <button id="spa-find-btn">بحث</button>
-            <button id="spa-clear-btn" class="ghost">مسح</button>
-          </div>
-          <small id="spa-find-hint" class="muted"></small>
-        </div>
-
-        <form id="form-spa" class="grid">
-          <input type="hidden" id="spa-id" name="id" />
-          <label>نوع القطعة
-            <select name="part_category">
-              <option>مضخات الديزل</option>
-              <option>النوزلات</option>
-              <option>سلف</option>
-              <option>دينمو شحن</option>
-              <option>كروت وشواحن</option>
-              <option>موديولات</option>
-              <option>منظمات وانفرترات</option>
-              <option>تسييخ</option>
-              <option>أخرى</option>
-            </select>
-          </label>
-          <label>اسم القطعة<input name="part_name" /></label>
-          <label>موديل القطعة<input name="part_model" /></label>
-          <label>العدد<input type="number" name="quantity" value="1" min="1" /></label>
-          <label>الرقم التسلسلي<input name="serial" /></label>
-          <label>المصدر<input name="source" /></label>
-          <label>المؤهل<input name="qualified_by" /></label>
-          <label>تاريخ التأهيل<input type="date" name="rehab_date" required /></label>
-          <label>الفحص
-            <select name="tested">
-              <option value="">—</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-          </label>
-          <label>ملاحظات<textarea name="notes"></textarea></label>
-          <div class="row">
-            <button type="submit">حفظ (إضافة)</button>
-            <button type="button" id="btn-spa-update">تحديث السجل</button>
-          </div>
-        </form>
-
-        <div class="row">
-          <label>شهر <input id="spa-month" type="number" min="1" max="12" /></label>
-          <label>سنة <input id="spa-year" type="number" /></label>
-          <button id="btn-spa-export">تصدير Excel (حتى اليوم)</button>
-        </div>
-
-        <!-- تغيير المعرف ليتوافق مع app.js -->
         <div class="chartwrap"><canvas id="sparesBar"></canvas></div>
         <div id="list-spa" class="list"></div>
       </div>
     </section>
 
-    <!-- ===== الملخصات العامة (تبقى ظاهرة إن رغبت) ===== -->
+    <!-- ===== الملخصات (Excel) ===== -->
     <section id="panel-summaries" class="panel">
       <h2>الملخصات (Excel)</h2>
+      <div class="muted" style="margin-bottom:6px">التجميع حسب <b>تاريخ التأهيل</b></div>
       <div class="row">
-        <label>شهر <input id="sum-month" type="number" min="1" max="12" value="6" /></label>
-        <label>سنة <input id="sum-year" type="number" value="2025" /></label>
+        <label>شهر <input id="sum-month" type="number" min="1" max="12" /></label>
+        <label>سنة <input id="sum-year" type="number" /></label>
         <button id="btn-monthly">توليد ملخص شهري</button>
       </div>
-      <div class="row">
-        <label>بداية الربع (شهر) <input id="q-month" type="number" min="1" max="12" value="4" /></label>
-        <label>سنة <input id="q-year" type="number" value="2025" /></label>
+      <div class="row" style="margin-top:6px">
+        <label>بداية الربع (شهر) <input id="q-month" type="number" min="1" max="12" /></label>
+        <label>سنة <input id="q-year" type="number" /></label>
         <button id="btn-quarterly">توليد ملخص ربع سنوي</button>
       </div>
     </section>
@@ -287,8 +145,8 @@
 
   <footer><small>© نظام السامي لإدارة الصرف والتأهيل</small></footer>
 
-  <!-- تحميل Chart.js أولاً ثم تطبيق الواجهة (مرّة واحدة فقط) -->
+  <!-- تحميل Chart.js ثم تطبيق الواجهة (مرة واحدة) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="/static/app.js?v=4" defer></script>
+  <script src="/static/app.js?v=5" defer></script>
 </body>
 </html>

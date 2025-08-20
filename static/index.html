@@ -5,33 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>نظام السامي لإدارة الصرف والتأهيل</title>
 
-
   <!-- خطوط + تنسيقات -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=3" />
+  <link rel="stylesheet" href="/static/styles.css?v=4" />
 
-  <!-- مكتبة الرسوم + سكريبت الواجهة -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script defer src="/static/app.js?v=3"></script>
+  <style>
+    /* ضمان إخفاء العناصر ذات خاصية hidden بغض النظر عن ملف CSS */
+    [hidden]{display:none !important;}
+    canvas{display:block; width:100%; height:320px;}
+  </style>
 </head>
+
 <body>
   <header>
-   <h1>نظام السامي لإدارة الصرف والتأهيل</h1>
-
+    <h1>نظام السامي لإدارة الصرف والتأهيل</h1>
     <p>إدخال بيانات — تقارير Excel — ملخصات — رسوم بيانية شهرية</p>
   </header>
 
   <main>
-    <!-- الأيقونات الرئيسية: تُظهر/تُخفي اللوحات -->
-    <section class="tiles">
-      <button class="tile" id="tile-issue">الصرف / طارئ</button>
-      <button class="tile" id="tile-rehab">توريد / تأهيل</button>
+    <!-- ===== الصفحة الرئيسية (لوحة البداية) ===== -->
+    <section class="tiles" id="panel-home" data-panel>
+      <button class="tile" id="open-issue">الصرف / طارئ</button>
+      <button class="tile" id="open-qual">توريد / تأهيل</button>
     </section>
 
-    <!-- ===== لوحة الصرف (مخفية افتراضيًا) ===== -->
-    <section id="panel-issue" class="panel hidden">
-      <h2>الصرف / الطارئ</h2>
+    <!-- ===== لوحة الصرف/الطارئ ===== -->
+    <section id="panel-issue" class="panel" data-panel hidden>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h2 style="margin:0">الصرف / الطارئ</h2>
+        <button class="ghost" id="back-home">رجوع</button>
+      </div>
+
       <form id="form-issue" class="grid">
         <label>اسم القطعة<input name="item_name" required /></label>
         <label>المودل<input name="model" /></label>
@@ -50,18 +55,32 @@
         <label>المستلم<input name="receiver" /></label>
         <div class="row">
           <button type="submit">حفظ</button>
-          <button type="button" id="btn-issue-full">تقرير Excel كامل</button>
-          <button type="button" id="btn-issue-summary">تقرير ملخص</button>
+          <!-- الأزرار التي يعتمدها app.js للتقارير -->
+          <button type="button" id="btnIssueFull">تقرير Excel كامل</button>
+          <button type="button" id="btnIssueSummary">تقرير ملخص</button>
         </div>
       </form>
+
       <div id="list-issue" class="list"></div>
     </section>
 
-    <!-- ===== لوحة التأهيل (مخفية افتراضيًا) ===== -->
-    <section id="panel-rehab" class="panel hidden">
-      <h2>التأهيلات</h2>
+    <!-- ===== لوحة التوريد/التأهيل ===== -->
+    <section id="panel-rehab" class="panel" data-panel hidden>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h2 style="margin:0">التأهيلات</h2>
+        <button class="ghost" id="back-home-2">رجوع</button>
+      </div>
 
-      <!-- أزرار فرعية -->
+      <!-- اختيار شهر/سنة + أزرار الملخص والرسوم (الأسماء مطابقة لما يتوقعه app.js) -->
+      <div class="row" style="margin-bottom:12px">
+        <label>السنة <input id="year" type="number" min="2000" /></label>
+        <label>الشهر <input id="month" type="number" min="1" max="12" /></label>
+        <button id="btnUpdateCharts">تحديث الرسوم</button>
+        <button id="btnMonthlySummary" class="accent">توليد ملخص شهري</button>
+        <button id="btnQuarterlySummary">توليد ملخص ربع سنوي</button>
+      </div>
+
+      <!-- أزرار فرعية كما هي -->
       <div class="subtiles">
         <button class="subtile" id="sub-cab">الكبائن</button>
         <button class="subtile" id="sub-ast">الأصول</button>
@@ -69,11 +88,10 @@
         <button class="subtile" id="btn-dup">فحص التكرارات</button>
       </div>
 
-      <!-- ===== الكبائن ===== -->
+      <!-- ===== الكــــبائن ===== -->
       <div id="block-cab" class="block hidden">
         <h3>الكبائن</h3>
 
-        <!-- بحث/تعديل بالترميز -->
         <div class="panel-lite">
           <h4>بحث/تعديل</h4>
           <div class="row">
@@ -115,7 +133,8 @@
           <button id="btn-cab-export">تصدير Excel (حتى اليوم)</button>
         </div>
 
-        <div class="chartwrap"><canvas id="chart-cab"></canvas></div>
+        <!-- ملاحظة مهمة: تغيير معرف الكانفاس ليتوافق مع app.js -->
+        <div class="chartwrap"><canvas id="cabPie"></canvas></div>
         <div id="list-cab" class="list"></div>
       </div>
 
@@ -123,7 +142,6 @@
       <div id="block-ast" class="block hidden">
         <h3>الأصول</h3>
 
-        <!-- بحث/تعديل بالرقم التسلسلي/الترميز -->
         <div class="panel-lite">
           <h4>بحث/تعديل</h4>
           <div class="row">
@@ -178,14 +196,14 @@
           </div>
         </form>
 
-        <!-- تصدير شهر حتى تاريخه -->
         <div class="row">
           <label>شهر <input id="ast-month" type="number" min="1" max="12" /></label>
           <label>سنة <input id="ast-year" type="number" /></label>
           <button id="btn-ast-export">تصدير Excel (حتى اليوم)</button>
         </div>
 
-        <div class="chartwrap"><canvas id="chart-ast"></canvas></div>
+        <!-- تغيير المعرف ليتوافق مع app.js -->
+        <div class="chartwrap"><canvas id="assetsBar"></canvas></div>
         <div id="list-ast" class="list"></div>
       </div>
 
@@ -193,7 +211,6 @@
       <div id="block-spa" class="block hidden">
         <h3>قطع الغيار</h3>
 
-        <!-- بحث/تعديل بالرقم التسلسلي (إن وُجد) -->
         <div class="panel-lite">
           <h4>بحث/تعديل</h4>
           <div class="row">
@@ -240,19 +257,19 @@
           </div>
         </form>
 
-        <!-- تصدير شهر حتى تاريخه -->
         <div class="row">
           <label>شهر <input id="spa-month" type="number" min="1" max="12" /></label>
           <label>سنة <input id="spa-year" type="number" /></label>
           <button id="btn-spa-export">تصدير Excel (حتى اليوم)</button>
         </div>
 
-        <div class="chartwrap"><canvas id="chart-spa"></canvas></div>
+        <!-- تغيير المعرف ليتوافق مع app.js -->
+        <div class="chartwrap"><canvas id="sparesBar"></canvas></div>
         <div id="list-spa" class="list"></div>
       </div>
     </section>
 
-    <!-- ===== الملخصات (تبقى ظاهرة) ===== -->
+    <!-- ===== الملخصات العامة (تبقى ظاهرة إن رغبت) ===== -->
     <section id="panel-summaries" class="panel">
       <h2>الملخصات (Excel)</h2>
       <div class="row">
@@ -266,31 +283,12 @@
         <button id="btn-quarterly">توليد ملخص ربع سنوي</button>
       </div>
     </section>
-
-    <!-- ===== الرسوم الشهرية ===== -->
-    <section id="panel-charts" class="panel">
-      <h2>الرسوم الشهرية</h2>
-      <div class="row">
-        <label>شهر <input id="chart-month" type="number" min="1" max="12" value="6" /></label>
-        <label>سنة <input id="chart-year" type="number" value="2025" /></label>
-        <button id="btn-refresh-charts">تحديث الرسوم</button>
-      </div>
-      <div class="charts-grid">
-        <div><h3>الكبائن (Pie)</h3><canvas id="viz-cab"></canvas></div>
-        <div><h3>الأصول (Bar)</h3><canvas id="viz-ast"></canvas></div>
-        <div><h3>قطع الغيار (Bar)</h3><canvas id="viz-spa"></canvas></div>
-      </div>
-    </section>
   </main>
 
-<footer><small>© نظام السامي لإدارة الصرف والتأهيل</small></footer>
-<script src="/static/app.js?v=20250820" defer></script>
-<!-- تحميل Chart.js (لو الرسومات تعتمد عليه) -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <footer><small>© نظام السامي لإدارة الصرف والتأهيل</small></footer>
 
-<!-- تحميل سكربت الواجهة مع defer وكسر كاش للتحديث -->
-<script src="/static/app.js?v=20250821" defer></script>
+  <!-- تحميل Chart.js أولاً ثم تطبيق الواجهة (مرّة واحدة فقط) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/app.js?v=4" defer></script>
 </body>
 </html>
-
-

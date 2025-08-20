@@ -16,10 +16,11 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.chart import PieChart, BarChart, Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.utils import get_column_letter
+from sqlmodel import SQLModel, Field, Session, select, create_engine
 
-# ---- database engine (Render free plan uses /tmp, set via env) ----
 DB_PATH = os.getenv("DB_PATH", "./maintenance.db")
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+
 
 
 # ---------------- App & static ----------------

@@ -172,3 +172,9 @@ button:hover, .btn:hover{ transform: translateY(-1px); box-shadow: var(--shadow)
   height: 320px !important;   /* fixed height */
   max-width: 100%;
 }
+.muted{color:#777}
+.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}
+#global-search-result .res-block{padding:6px 0; border-top:1px solid #eee}
+#global-search-result .res-title{font-weight:bold; margin:4px 0}
+#global-search-result .res-row{padding:6px 4px; cursor:pointer; border-radius:6px}
+#global-search-result .res-row:hover{background:#f0f6ff}

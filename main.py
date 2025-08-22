@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from sqlmodel import SQLModel, Field, Session, select, create_engine
 from sqlalchemy import func, text
-from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.exc import ProgrammingError, OperationalError
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -31,7 +31,7 @@ if DATABASE_URL:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, echo=False)
     DIALECT = "postgres"
 else:
-    DB_PATH = os.getenv("DB_PATH", "/tmp/maintenance_v3.db")
+    DB_PATH = os.getenv("DB_PATH", "./maintenance.db")
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     engine = create_engine(
         f"sqlite:///{DB_PATH}",
@@ -83,7 +83,7 @@ class AssetRehab(SQLModel, table=True):
     requester: Optional[str] = None
     receiver: Optional[str] = None
     notes: Optional[str] = None
-    rehab_date: Optional[date] = Field(default=None, index=True)  # تعتمد عليها الإحصاءات/التقارير
+    rehab_date: Optional[date] = Field(default=None, index=True)  # مهم للتقارير والرسوم
 
 class SparePartRehab(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -102,20 +102,38 @@ def init_db():
     SQLModel.metadata.create_all(engine)
 init_db()
 
-# ---- مهايئ عام: تأكد من وجود العمود rehab_date في assetrehab (SQLite/PG) ----
-def ensure_assetrehab_rehab_date():
-    insp = sa_inspect(engine)
-    try:
-        cols = [c["name"] for c in insp.get_columns("assetrehab")]
-    except Exception:
-        # لو الجدول غير موجود بعد، create_all سيُنشئه؛ لا شيء نفعله هنا.
-        return
-    if "rehab_date" not in cols:
-        ddl = "ALTER TABLE assetrehab ADD COLUMN rehab_date DATE"
-        idx = "CREATE INDEX IF NOT EXISTS ix_assetrehab_rehab_date ON assetrehab (rehab_date)"
-        with engine.begin() as conn:
-            conn.execute(text(ddl))
-            conn.execute(text(idx))
+# --------- Migrations: add AssetRehab.rehab_date if missing ----------
+def _sqlite_has_col(table: str, col: str) -> bool:
+    with engine.begin() as conn:
+        rows = conn.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
+    return any(r[1] == col for r in rows)
+
+def _ensure_asset_rehab_date():
+    """Add rehab_date column to assetrehab if it doesn't exist (SQLite & Postgres)."""
+    with engine.begin() as conn:
+        # If table not there yet, nothing to do (create_all just ran).
+        if DIALECT == "sqlite":
+            tbl = conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='assetrehab';"
+            )).fetchone()
+            if not tbl:
+                return
+            if not _sqlite_has_col("assetrehab", "rehab_date"):
+                conn.execute(text("ALTER TABLE assetrehab ADD COLUMN rehab_date DATE;"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_assetrehab_rehab_date ON assetrehab (rehab_date);"))
+        else:  # postgres
+            try:
+                exists = conn.execute(text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name='assetrehab' AND column_name='rehab_date'"
+                )).fetchone()
+            except (ProgrammingError, OperationalError):
+                exists = None
+            if not exists:
+                conn.execute(text("ALTER TABLE assetrehab ADD COLUMN IF NOT EXISTS rehab_date DATE;"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_assetrehab_rehab_date ON assetrehab (rehab_date);"))
+
+_ensure_asset_rehab_date()
 
 # ===================== App ====================
 app = FastAPI(title="Maintenance Tracker")
@@ -126,8 +144,8 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.on_event("startup")
-def _startup_migrate():
-    ensure_assetrehab_rehab_date()
+def _startup():
+    _ensure_asset_rehab_date()
 
 @app.get("/")
 def root():
@@ -178,12 +196,10 @@ def style_header(ws, cols: int, row: int = 1):
 def border_all(ws, cols: int):
     thin = Side(style="thin", color="999999")
     for r in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=cols):
-        for c in r:
-            c.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+        for c in r: c.border = Border(top=thin, left=thin, right=thin, bottom=thin)
 
 def year_eq(col, y: int):
     return func.strftime("%Y", col) == f"{y:04d}" if DIALECT == "sqlite" else func.extract("year", col) == y
-
 def month_eq(col, m: int):
     return func.strftime("%m", col) == f"{m:02d}" if DIALECT == "sqlite" else func.extract("month", col) == m
 
@@ -192,16 +208,16 @@ def month_eq(col, m: int):
 async def add_issue(req: Request):
     f = await req.form()
     item = Issue(
-        item_name   = f.get("item_name") or "",
-        model       = norm(f.get("model")),
-        serial      = norm(f.get("serial")),
-        status      = norm(f.get("status")),
-        quantity    = to_int(f.get("quantity") or "1", 1),
-        location    = norm(f.get("location")),
-        requester   = norm(f.get("requester")),
-        issue_date  = to_date(f.get("issue_date")) or date.today(),
-        qualified_by= norm(f.get("qualified_by")),
-        receiver    = norm(f.get("receiver")),
+        item_name = f.get("item_name") or "",
+        model = norm(f.get("model")),
+        serial = norm(f.get("serial")),
+        status = norm(f.get("status")),
+        quantity = to_int(f.get("quantity") or "1", 1),
+        location = norm(f.get("location")),
+        requester = norm(f.get("requester")),
+        issue_date = to_date(f.get("issue_date")) or date.today(),
+        qualified_by = norm(f.get("qualified_by")),
+        receiver = norm(f.get("receiver")),
     )
     with Session(engine) as s:
         s.add(item); s.commit(); s.refresh(item); return item
@@ -247,16 +263,23 @@ async def add_cabinet(req: Request):
             if dup: raise HTTPException(400, "الترميز موجود مسبقًا")
     item = CabinetRehab(
         cabinet_type = f.get("cabinet_type") or "",
-        code         = code,
-        rehab_date   = to_date(f.get("rehab_date")) or date.today(),
+        code = code,
+        rehab_date = to_date(f.get("rehab_date")) or date.today(),
         qualified_by = norm(f.get("qualified_by")),
-        location     = norm(f.get("location")),
-        receiver     = norm(f.get("receiver")),
-        issue_date   = to_date(f.get("issue_date")),
-        notes        = norm(f.get("notes")),
+        location = norm(f.get("location")),
+        receiver = norm(f.get("receiver")),
+        issue_date = to_date(f.get("issue_date")),
+        notes = norm(f.get("notes")),
     )
     with Session(engine) as s:
         s.add(item); s.commit(); s.refresh(item); return item
+
+@app.get("/api/cabinets/find")
+def find_cabinet(code: str = Query(...)):
+    with Session(engine) as s:
+        obj = s.exec(select(CabinetRehab).where(CabinetRehab.code == code)).first()
+        if not obj: raise HTTPException(404, "غير موجود")
+        return obj
 
 @app.get("/api/stats/cabinets")
 def stats_cabinets(year: int, month: int):
@@ -273,8 +296,7 @@ def stats_cabinets(year: int, month: int):
 def export_cabinets(year: int, month: int):
     with Session(engine) as s:
         q = select(CabinetRehab).where(year_eq(CabinetRehab.rehab_date, year),
-                                       month_eq(CabinetRehab.rehab_date, month)) \
-                                .order_by(CabinetRehab.rehab_date, CabinetRehab.id)
+                                       month_eq(CabinetRehab.rehab_date, month)).order_by(CabinetRehab.rehab_date, CabinetRehab.id)
         rows = s.exec(q).all()
     wb = Workbook(); ws = wb.active; ws.title = "الكبائن"; ws.sheet_view.rightToLeft = True
     headers = ["نوع الكبينة","الترميز","تاريخ التأهيل","المؤهل","الموقع","المستلم","تاريخ الصرف","ملاحظات"]
@@ -287,46 +309,37 @@ def export_cabinets(year: int, month: int):
 # ==================== Assets ==================
 def _coerce_asset_payload(d: Dict[str, Any]) -> AssetRehab:
     return AssetRehab(
-        asset_type       = d.get("asset_type") or "",
-        model            = norm(d.get("model")),
-        serial_or_code   = norm(d.get("serial_or_code")),
-        quantity         = to_int(d.get("quantity") or "1", 1),
-        prev_location    = norm(d.get("prev_location")),
-        supply_date      = to_date(d.get("supply_date")) or date.today(),
-        qualified_by     = norm(d.get("qualified_by")),
-        lifted           = to_bool(d.get("lifted")),
-        inspector        = norm(d.get("inspector")),
-        tested           = to_bool(d.get("tested")),
-        issue_date       = to_date(d.get("issue_date")),
+        asset_type = d.get("asset_type") or "",
+        model = norm(d.get("model")),
+        serial_or_code = norm(d.get("serial_or_code")),
+        quantity = to_int(d.get("quantity") or "1", 1),
+        prev_location = norm(d.get("prev_location")),
+        supply_date = to_date(d.get("supply_date")) or date.today(),
+        qualified_by = norm(d.get("qualified_by")),
+        lifted = to_bool(d.get("lifted")),
+        inspector = norm(d.get("inspector")),
+        tested = to_bool(d.get("tested")),
+        issue_date = to_date(d.get("issue_date")),
         current_location = norm(d.get("current_location")),
-        requester        = norm(d.get("requester")),
-        receiver         = norm(d.get("receiver")),
-        notes            = norm(d.get("notes")),
-        rehab_date       = to_date(d.get("rehab_date")),
+        requester = norm(d.get("requester")),
+        receiver = norm(d.get("receiver")),
+        notes = norm(d.get("notes")),
+        rehab_date = to_date(d.get("rehab_date")),
     )
 
 def _asset_duplicate_exists(s: Session, serial_or_code: Optional[str], exclude_id: Optional[int] = None) -> bool:
-    if not serial_or_code:
-        return False
+    if not serial_or_code: return False
     q = select(AssetRehab.id).where(AssetRehab.serial_or_code == serial_or_code)
     for (rid,) in s.exec(q).all():
-        if exclude_id and rid == exclude_id:
-            continue
+        if exclude_id and rid == exclude_id: continue
         return True
     return False
 
 @app.post("/api/assets")
 async def add_asset(req: Request):
-    # تأكد من العمود في أي قاعدة قبل أي عملية
-    ensure_assetrehab_rehab_date()
-
-    if "application/json" in (req.headers.get("content-type") or ""):
-        f = await req.json()
-    else:
-        f = dict(await req.form())
-
-    item = _coerce_asset_payload(f)
-
+    data = await (req.json() if "application/json" in (req.headers.get("content-type") or "") else req.form())
+    if not isinstance(data, dict): data = dict(data)
+    item = _coerce_asset_payload(data)
     with Session(engine) as s:
         if item.serial_or_code and _asset_duplicate_exists(s, item.serial_or_code):
             raise HTTPException(400, "هناك تكرار في الرقم التسلسلي/الترميز")
@@ -334,14 +347,8 @@ async def add_asset(req: Request):
 
 @app.put("/api/assets/{aid}")
 async def update_asset(aid: int, req: Request):
-    ensure_assetrehab_rehab_date()
-
-    if (req.headers.get("content-type") or "").lower().startswith("application/json"):
-        data = await req.json()
-    else:
-        form = await req.form()
-        data = {k: v for k, v in form.items()}
-
+    data = await (req.json() if "application/json" in (req.headers.get("content-type") or "") else req.form())
+    if not isinstance(data, dict): data = dict(data)
     with Session(engine) as s:
         obj = s.get(AssetRehab, aid)
         if not obj: raise HTTPException(404, "غير موجود")
@@ -351,9 +358,15 @@ async def update_asset(aid: int, req: Request):
                 raise HTTPException(400, "هناك تكرار في الرقم التسلسلي/الترميز")
         patch = _coerce_asset_payload(data).dict()
         patch.pop("id", None)
-        for k, v in patch.items():
-            setattr(obj, k, v)
+        for k, v in patch.items(): setattr(obj, k, v)
         s.add(obj); s.commit(); s.refresh(obj); return obj
+
+@app.get("/api/assets/find")
+def find_asset(serial: str = Query(...)):
+    with Session(engine) as s:
+        obj = s.exec(select(AssetRehab).where(AssetRehab.serial_or_code == serial)).first()
+        if not obj: raise HTTPException(404, "غير موجود")
+        return obj
 
 @app.get("/api/stats/assets")
 def stats_assets(
@@ -361,58 +374,41 @@ def stats_assets(
     month: int = Query(..., ge=1, le=12, description="الشهر 1..12"),
     date_field: str = Query("rehab_date", description="rehab_date أو supply_date")
 ):
-    ensure_assetrehab_rehab_date()
-
-    # افتراضي: rehab_date؛ ويمكن التبديل إلى supply_date
-    if date_field == "supply_date":
-        col = AssetRehab.supply_date
-    else:
-        col = func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date)
-
+    col = AssetRehab.supply_date if date_field == "supply_date" else func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date)
     with Session(engine) as s:
         rows = s.exec(
-            select(AssetRehab.asset_type, func.coalesce(func.sum(AssetRehab.quantity), 0))
-            .where(
-                col.is_not(None),
-                year_eq(col, year),
-                month_eq(col, month),
-            )
+            select(AssetRehab.asset_type, func.count(AssetRehab.id))
+            .where(col.is_not(None), year_eq(col, year), month_eq(col, month))
             .group_by(AssetRehab.asset_type)
         ).all()
-
-    counts = {k: int(v or 0) for (k, v) in rows}
+    counts = {k: v for (k, v) in rows}
     return {
-        "بطاريات":   counts.get("بطاريات", 0),
-        "موحدات":    counts.get("موحدات", 0),
-        "محركات":    counts.get("محركات", 0),
-        "مولدات":    counts.get("مولدات", 0),
-        "مكيفات":    counts.get("مكيفات", 0),
-        "أصول أخرى": counts.get("أصول أخرى", 0),
+        "بطاريات":   int(counts.get("بطاريات", 0)),
+        "موحدات":    int(counts.get("موحدات", 0)),
+        "محركات":    int(counts.get("محركات", 0)),
+        "مولدات":    int(counts.get("مولدات", 0)),
+        "مكيفات":    int(counts.get("مكيفات", 0)),
+        "أصول أخرى": int(counts.get("أصول أخرى", 0)),
     }
 
-def _asset_in_month_with_fallback(r: AssetRehab, start: date, end: date) -> bool:
+def _asset_in_range(r: AssetRehab, start: date, end: date) -> bool:
     d = r.rehab_date or r.supply_date
     return bool(d and start <= d < end)
 
 @app.get("/api/export/assets.xlsx")
 def export_assets(year: int, month: int):
-    ensure_assetrehab_rehab_date()
-
     start, end = month_bounds(year, month)
     with Session(engine) as s:
-        allrows = s.exec(select(AssetRehab)).all()
-        rows = [r for r in allrows if _asset_in_month_with_fallback(r, start, end)]
-
+        rows_all = s.exec(select(AssetRehab)).all()
+        rows = [r for r in rows_all if _asset_in_range(r, start, end)]
     wb = Workbook(); ws = wb.active; ws.title = "الأصول"; ws.sheet_view.rightToLeft = True
     headers = ["نوع الأصل","المودل","الرقم التسلسلي/الترميز","العدد","الموقع السابق","تاريخ التوريد",
                "المؤهل","الرفع","الفاحص","الفحص","تاريخ الصرف","الموقع الحالي","جهة الطلب","المستلم","ملاحظات","تاريخ التأهيل"]
     ws.append(headers); style_header(ws, len(headers))
     for r in rows:
-        ws.append([
-            r.asset_type, r.model, r.serial_or_code, r.quantity, r.prev_location, r.supply_date,
-            r.qualified_by, r.lifted, r.inspector, r.tested, r.issue_date, r.current_location,
-            r.requester, r.receiver, r.notes, r.rehab_date
-        ])
+        ws.append([r.asset_type, r.model, r.serial_or_code, r.quantity, r.prev_location, r.supply_date,
+                   r.qualified_by, r.lifted, r.inspector, r.tested, r.issue_date, r.current_location,
+                   r.requester, r.receiver, r.notes, r.rehab_date])
     border_all(ws, len(headers))
     return wb_stream(wb, f"assets_{year}_{month:02d}.xlsx")
 
@@ -422,18 +418,25 @@ async def add_spare(req: Request):
     f = await req.form()
     item = SparePartRehab(
         part_category = f.get("part_category") or "",
-        part_name     = norm(f.get("part_name")),
-        part_model    = norm(f.get("part_model")),
-        quantity      = to_int(f.get("quantity") or "1", 1),
-        serial        = norm(f.get("serial")),
-        source        = norm(f.get("source")),
-        qualified_by  = norm(f.get("qualified_by")),
-        rehab_date    = to_date(f.get("rehab_date")) or date.today(),
-        tested        = to_bool(f.get("tested")),
-        notes         = norm(f.get("notes")),
+        part_name = norm(f.get("part_name")),
+        part_model = norm(f.get("part_model")),
+        quantity = to_int(f.get("quantity") or "1", 1),
+        serial = norm(f.get("serial")),
+        source = norm(f.get("source")),
+        qualified_by = norm(f.get("qualified_by")),
+        rehab_date = to_date(f.get("rehab_date")) or date.today(),
+        tested = to_bool(f.get("tested")),
+        notes = norm(f.get("notes")),
     )
     with Session(engine) as s:
         s.add(item); s.commit(); s.refresh(item); return item
+
+@app.get("/api/spares/find")
+def find_spare(serial: str = Query(...)):
+    with Session(engine) as s:
+        obj = s.exec(select(SparePartRehab).where(SparePartRehab.serial == serial)).first()
+        if not obj: raise HTTPException(404, "غير موجود")
+        return obj
 
 @app.get("/api/stats/spares")
 def stats_spares(year: int, month: int):
@@ -453,8 +456,7 @@ def stats_spares(year: int, month: int):
 def export_spares(year: int, month: int):
     with Session(engine) as s:
         q = select(SparePartRehab).where(year_eq(SparePartRehab.rehab_date, year),
-                                         month_eq(SparePartRehab.rehab_date, month)) \
-                                  .order_by(SparePartRehab.rehab_date, SparePartRehab.id)
+                                         month_eq(SparePartRehab.rehab_date, month)).order_by(SparePartRehab.rehab_date, SparePartRehab.id)
         rows = s.exec(q).all()
     wb = Workbook(); ws = wb.active; ws.title = "قطع الغيار"; ws.sheet_view.rightToLeft = True
     headers = ["نوع القطعة","اسم القطعة","موديل القطعة","العدد","الرقم التسلسلي","المصدر","المؤهل","تاريخ التأهيل","الفحص","ملاحظات"]
@@ -467,14 +469,15 @@ def export_spares(year: int, month: int):
 # ============ Duplicates validator ============
 @app.get("/api/validate/duplicates")
 def validate_duplicates():
-    ensure_assetrehab_rehab_date()
     with Session(engine) as s:
+        # cabinets
         code_counts: Dict[str,int] = {}
         for r in s.exec(select(CabinetRehab)).all():
             if r.code:
                 code_counts[r.code] = code_counts.get(r.code, 0) + 1
         cabinets_codes = [k for k,v in code_counts.items() if v > 1]
 
+        # assets
         ser_counts: Dict[str,int] = {}
         ser_loc_counts: Dict[Tuple[str,str],int] = {}
         for r in s.exec(select(AssetRehab)).all():
@@ -486,6 +489,7 @@ def validate_duplicates():
         assets_serials = [k for k,v in ser_counts.items() if v > 1]
         assets_serial_loc_pairs = [f"{a}@{b}" for (a,b),v in ser_loc_counts.items() if v > 1]
 
+        # spares
         ss: Dict[Tuple[str,str],int] = {}
         for r in s.exec(select(SparePartRehab)).all():
             key = (r.serial or "", r.source or "")
@@ -505,8 +509,7 @@ AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","ي�
 
 @app.get("/api/export/monthly_summary.xlsx")
 def export_monthly_summary(year: int, month: int):
-    ensure_assetrehab_rehab_date()
-
+    # counts using rehab_date (وإن لم يوجد يرجع الأصل بلا احتساب)
     with Session(engine) as s:
         cab_rows = s.exec(
             select(CabinetRehab.cabinet_type, func.count(CabinetRehab.id))
@@ -517,13 +520,12 @@ def export_monthly_summary(year: int, month: int):
         for k, v in cab_rows:
             if k in cab: cab[k] = int(v or 0)
 
+        # أصول: نجمع بالrehab_date، وإن لم يُعبّأ في السجل فلن يُحتسب
         ast_rows = s.exec(
             select(AssetRehab.asset_type, func.coalesce(func.sum(AssetRehab.quantity), 0))
-            .where(
-                func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date).is_not(None),
-                year_eq(func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date), year),
-                month_eq(func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date), month),
-            )
+            .where(AssetRehab.rehab_date.is_not(None),
+                   year_eq(AssetRehab.rehab_date, year),
+                   month_eq(AssetRehab.rehab_date, month))
             .group_by(AssetRehab.asset_type)
         ).all()
         ast = {"بطاريات":0,"موحدات":0,"محركات":0,"مولدات":0,"مكيفات":0,"أصول أخرى":0}
@@ -566,8 +568,7 @@ def export_monthly_summary(year: int, month: int):
 
     headers = ["م","الصنف", mname]
     ws.append(headers); style_header(ws, len(headers), row=3)
-    total = 0
-    r = 4
+    total = 0; r = 4
     for i,(label,(kind,key)) in enumerate(rows_map, start=1):
         ws.cell(row=r, column=1, value=i)
         ws.cell(row=r, column=2, value=label)
@@ -581,8 +582,6 @@ def export_monthly_summary(year: int, month: int):
 
 @app.get("/api/export/quarterly_summary.xlsx")
 def export_quarterly_summary(start_year: int, start_month: int):
-    ensure_assetrehab_rehab_date()
-
     months: List[Tuple[int,int]] = []
     y, m = start_year, start_month
     for _ in range(3):
@@ -622,11 +621,9 @@ def export_quarterly_summary(start_year: int, start_month: int):
 
             ast_rows = s.exec(
                 select(AssetRehab.asset_type, func.coalesce(func.sum(AssetRehab.quantity), 0))
-                .where(
-                    func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date).is_not(None),
-                    year_eq(func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date), yy),
-                    month_eq(func.coalesce(AssetRehab.rehab_date, AssetRehab.supply_date), mm),
-                )
+                .where(AssetRehab.rehab_date.is_not(None),
+                       year_eq(AssetRehab.rehab_date, yy),
+                       month_eq(AssetRehab.rehab_date, mm))
                 .group_by(AssetRehab.asset_type)
             ).all()
             ast = {"بطاريات":0,"موحدات":0,"محركات":0,"مولدات":0,"مكيفات":0,"أصول أخرى":0}

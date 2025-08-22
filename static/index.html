@@ -20,6 +20,28 @@
   </header>
 
   <main>
+    <!-- ======= Global Search (by code / serial) ======= -->
+<div id="global-search-bar" style="direction: rtl; margin: 14px 0; display:flex; gap:8px; align-items:center;">
+  <input id="global-search-input" type="text" placeholder="ابحث بالترميز أو الرقم التسلسلي"
+         style="flex:1; padding:10px 12px; border:1px solid #ccc; border-radius:8px;">
+  <button id="global-search-btn" type="button"
+          style="padding:10px 16px; border:none; background:#0d6efd; color:#fff; border-radius:8px; cursor:pointer;">
+    بحث
+  </button>
+</div>
+
+<!-- Results box -->
+<div id="global-search-result" style="direction: rtl; display:none; margin-bottom:16px; border:1px dashed #bbb; border-radius:8px; padding:10px 12px; background:#fafafa"></div>
+<!-- ======= /Global Search ======= -->
+<!-- ===== البحث العام (أعلى الواجهة) ===== -->
+<section class="panel" id="global-search" style="margin-bottom:12px">
+  <div class="row">
+    <input id="global-search-input" placeholder="بحث بالترميز أو الرقم التسلسلي" />
+    <button id="global-search-btn">بحث</button>
+  </div>
+  <div id="global-search-result" class="muted" style="display:none"></div>
+</section>
+
     <!-- الأيقونات الرئيسية -->
     <section class="tiles">
       <button class="tile" id="tile-issue">الصرف / طارئ</button>

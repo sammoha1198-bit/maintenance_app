@@ -161,3 +161,14 @@ button:hover, .btn:hover{ transform: translateY(-1px); box-shadow: var(--shadow)
   .grid{ grid-template-columns: repeat(2,1fr); }
   .charts-grid{ grid-template-columns:1fr; }
 }
+/* ===== Fix Chart Growth ===== */
+.chartwrap { height: 340px; overflow: hidden; }
+.charts-grid canvas,
+#viz-cab, #viz-ast, #viz-spa,
+#chart-cab, #chart-ast, #chart-spa,
+#cabPie, #assetsBar, #sparesBar {
+  display: block;
+  width: 100% !important;
+  height: 320px !important;   /* fixed height */
+  max-width: 100%;
+}

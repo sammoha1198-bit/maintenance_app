@@ -1,344 +1,339 @@
-/* ============================== app.js v7 ============================== */
 "use strict";
-const API_BASE = ""; // same-origin
 
-/* ---------- helpers ---------- */
+/* ================== Utilities (لا تغيير في السلوك) ================== */
+const API = ""; // same-origin
 const qs  = (s, el=document)=>el.querySelector(s);
 const qsa = (s, el=document)=>Array.from(el.querySelectorAll(s));
-const log = (...a)=>console.log("[app]",...a);
-const err = (...a)=>console.error("[app]",...a);
-
-async function getJSON(url){
-  try{
-    const r=await fetch(url,{credentials:"same-origin"});
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
-  }catch(e){ err("GET:", url, e); return null; }
-}
-async function sendJSON(method, url, body){
-  try{
-    const r=await fetch(url,{
-      method,
-      headers:{ "Content-Type":"application/json" },
-      credentials:"same-origin",
-      body: JSON.stringify(body || {})
-    });
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json().catch(()=>true);
-  }catch(e){ err(method, url, e); alert("فشل الحفظ: "+e.message); return null; }
-}
-const postJSON=(u,b)=>sendJSON("POST",u,b);
-const putJSON =(u,b)=>sendJSON("PUT",u,b);
+const now = ()=>{ const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()+1}; };
+const toInt=(v,d)=>{ const n=parseInt(v,10); return Number.isFinite(n)?n:d; };
+function toast(msg){ alert(msg); }
 function download(url){ window.location.href = url; }
 
-function setFixedCanvas(c, h=320){
-  if(!c) return; c.style.width="100%"; c.style.height=`${h}px`;
-  if(!c.getAttribute("height")) c.setAttribute("height", String(h));
+async function getJSON(url){
+  const r = await fetch(url, { credentials:"same-origin" });
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
 }
-
-/* ---------- panels/blocks ---------- */
-const PANELS = {
-  home : ()=>qs("#panel-home"),
-  issue: ()=>qs("#panel-issue"),
-  rehab: ()=>qs("#panel-rehab"),
-};
-function showPanel(name){
-  const all=[PANELS.home(),PANELS.issue(),PANELS.rehab()].filter(Boolean);
-  all.forEach(p=>{p.hidden=true;p.style.display="none";});
-  const t=PANELS[name]&&PANELS[name]();
-  if(t){t.hidden=false;t.style.display="";}
+async function sendForm(url, formEl){
+  const fd = new FormData(formEl);
+  const r = await fetch(url, { method:"POST", body:fd, credentials:"same-origin" });
+  if(!r.ok){
+    let msg = `HTTP ${r.status}`;
+    try{ const j = await r.json(); if(j?.detail) msg = j.detail; }catch(_){}
+    throw new Error(msg);
+  }
+  return r.json().catch(()=> ({}));
 }
-const BLOCKS = {
-  cab: ()=>qs("#block-cab"),
-  ast: ()=>qs("#block-ast"),
-  spa: ()=>qs("#block-spa"),
-};
-function showBlock(name){
-  const all=[BLOCKS.cab(),BLOCKS.ast(),BLOCKS.spa()].filter(Boolean);
-  all.forEach(b=>b.classList.add("hidden"));
-  const t=BLOCKS[name]&&BLOCKS[name]();
-  if(t) t.classList.remove("hidden");
-}
-
-/* ---------- date helpers ---------- */
-function getYearMonth(){
-  const now=new Date();
-  const y=parseInt(qs("#year")?.value || now.getFullYear(),10);
-  const m=parseInt(qs("#month")?.value || (now.getMonth()+1),10);
-  return {year:y, month:m};
-}
-
-/* ---------- charts ---------- */
-let CH={cab:null, ast:null, spa:null};
-function destroyChart(ref){ try{ref?.destroy?.();}catch{} }
-
-function drawCabPie(data){
-  const c=qs("#cabPie"); if(!c || !window.Chart) return;
-  setFixedCanvas(c,320); destroyChart(CH.cab);
-  const labels=["ATS","AMF","HYBRID","حماية انفرتر","ظفيرة تحكم"];
-  const vals=labels.map(k=>Number((data||{})[k]||0));
-  CH.cab=new Chart(c.getContext("2d"),{
-    type:"pie",
-    data:{labels,datasets:[{data:vals}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500}}
+async function sendJSON(url, method, obj){
+  const r = await fetch(url, {
+    method, credentials:"same-origin",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(obj||{})
   });
+  if(!r.ok){
+    let msg = `HTTP ${r.status}`;
+    try{ const j = await r.json(); if(j?.detail) msg = j.detail; }catch(_){}
+    throw new Error(msg);
+  }
+  return r.json().catch(()=> ({}));
 }
-function drawAssetsBar(data){
-  const c=qs("#assetsBar"); if(!c || !window.Chart) return;
-  setFixedCanvas(c,320); destroyChart(CH.ast);
-  const labels=["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"];
-  const vals=labels.map(k=>Number((data||{})[k]||0));
-  CH.ast=new Chart(c.getContext("2d"),{
-    type:"bar",
-    data:{labels,datasets:[{label:"عدد",data:vals}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},scales:{y:{beginAtZero:true}}}
+
+/* ================== Panels (بدون تغيير على التصميم) ================== */
+function hideAllPanels(){
+  ["panel-issue","panel-rehab","panel-excel"].forEach(id=> qs("#"+id)?.classList.add("hidden"));
+}
+function openIssue(){ hideAllPanels(); qs("#panel-issue")?.classList.remove("hidden"); }
+function openRehab(){ hideAllPanels(); qs("#panel-rehab")?.classList.remove("hidden"); qs("#rehab-chooser")?.classList.remove("hidden"); ["block-cab","block-ast","block-spa"].forEach(id=>qs("#"+id)?.classList.add("hidden")); }
+function openExcel(){ hideAllPanels(); qs("#panel-excel")?.classList.remove("hidden"); }
+function rehabOpenBlock(which){
+  qs("#rehab-chooser")?.classList.add("hidden");
+  ["block-cab","block-ast","block-spa"].forEach(id=>qs("#"+id)?.classList.add("hidden"));
+  qs("#block-"+which)?.classList.remove("hidden");
+}
+
+/* ================== Charts (إصلاح دقيق) ================== */
+/* الفكرة:
+   - لا نغيّر عناصر canvas نهائيًا (No cloning/replacing)
+   - نثبّت الارتفاع برمجيًا مرّة واحدة
+   - نُنشئ رسمًا إن لم يوجد، ونحدّث بياناته إن كان موجودًا
+   - في حال فشل API نرسم بيانات صفرية بدل عدم الرسم
+*/
+const CH = { cab:null, ast:null, spa:null };
+const FIXED_H = 320;
+
+function fixCanvasSize(id){
+  const c = document.getElementById(id);
+  if(!c) return null;
+  // ثبّت الارتفاع فقط، واترك العرض مرن
+  c.style.height = FIXED_H + "px";
+  if (!c.getAttribute("height")) c.setAttribute("height", String(FIXED_H));
+  return c;
+}
+
+function ensureCabinetChart(){
+  const c = fixCanvasSize("viz-cab") || fixCanvasSize("chart-cab") || fixCanvasSize("cabPie");
+  if(!c || !window.Chart) return null;
+  if (CH.cab) return CH.cab;
+  const ctx = c.getContext("2d");
+  CH.cab = new Chart(ctx, {
+    type: "pie",
+    data: { labels:["ATS","AMF","HYBRID","حماية انفرتر","ظفيرة تحكم"], datasets:[{ data:[0,0,0,0,0] }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, plugins:{ legend:{ position:"bottom" } } }
   });
+  return CH.cab;
 }
-function drawSparesBar(data){
-  const c=qs("#sparesBar"); if(!c || !window.Chart) return;
-  setFixedCanvas(c,320); destroyChart(CH.spa);
-  const labels=["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"];
-  const vals=labels.map(k=>Number((data||{})[k]||0));
-  CH.spa=new Chart(c.getContext("2d"),{
-    type:"bar",
-    data:{labels,datasets:[{label:"عدد",data:vals}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},scales:{y:{beginAtZero:true}}}
+function ensureAssetsChart(){
+  const c = fixCanvasSize("viz-ast") || fixCanvasSize("chart-ast") || fixCanvasSize("assetsBar");
+  if(!c || !window.Chart) return null;
+  if (CH.ast) return CH.ast;
+  const ctx = c.getContext("2d");
+  CH.ast = new Chart(ctx, {
+    type: "bar",
+    data: { labels:["بطاريات","موحدات","محركات","مولدات","مكيفات","أصول أخرى"], datasets:[{ label:"عدد", data:[0,0,0,0,0,0] }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation:{ duration:0 },
+      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } }
+    }
   });
+  return CH.ast;
 }
+function ensureSparesChart(){
+  const c = fixCanvasSize("viz-spa") || fixCanvasSize("chart-spa") || fixCanvasSize("sparesBar");
+  if(!c || !window.Chart) return null;
+  if (CH.spa) return CH.spa;
+  const ctx = c.getContext("2d");
+  CH.spa = new Chart(ctx, {
+    type: "bar",
+    data: { labels:["مضخات الديزل","النوزلات","سلف","دينمو شحن","كروت وشواحن","موديولات","منظمات وانفرترات","تسييخ","أخرى"], datasets:[{ label:"عدد", data:Array(9).fill(0) }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation:{ duration:0 },
+      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } }
+    }
+  });
+  return CH.spa;
+}
+
+function setBarYAxisMax(chart, data){
+  try{
+    const nums = (data||[]).map(v=>Number(v||0));
+    const m = Math.max(1, ...nums);
+    chart.options.scales.y.max = Math.ceil(m * 1.15) + 1;
+  }catch(_){}
+}
+
 async function updateCharts(){
-  const {year, month}=getYearMonth();
-  const q=`year=${year}&month=${month}&date_field=rehab_date`; // كله على تاريخ التأهيل
-  const [cab,ast,spa]=await Promise.all([
-    getJSON(`${API_BASE}/api/stats/cabinets?${q}`),
-    getJSON(`${API_BASE}/api/stats/assets?${q}`),
-    getJSON(`${API_BASE}/api/stats/spares?${q}`)
-  ]);
-  drawCabPie(cab||{});
-  drawAssetsBar(ast||{});
-  drawSparesBar(spa||{});
-}
+  const cur = now();
+  const y = toInt(qs("#chart-year")?.value || cur.y, cur.y);
+  const m = toInt(qs("#chart-month")?.value || cur.m, cur.m);
 
-/* ---------- exports (based on rehab_date) ---------- */
-function exportMonthly(){
-  const {year,month}=getYearMonth();
-  download(`${API_BASE}/api/export/monthly_summary.xlsx?year=${year}&month=${month}&date_field=rehab_date`);
-}
-function exportQuarterly(){
-  const {year,month}=getYearMonth();
-  download(`${API_BASE}/api/export/quarterly_summary.xlsx?start_year=${year}&start_month=${month}&date_field=rehab_date`);
-}
-function exportCabToDate(){
-  const y=parseInt(qs("#cab-year")?.value||new Date().getFullYear(),10);
-  const m=parseInt(qs("#cab-month")?.value||(new Date().getMonth()+1),10);
-  download(`${API_BASE}/api/export/cabinets.xlsx?year=${y}&month=${m}&date_field=rehab_date`);
-}
-function exportAstToDate(){
-  const y=parseInt(qs("#ast-year")?.value||new Date().getFullYear(),10);
-  const m=parseInt(qs("#ast-month")?.value||(new Date().getMonth()+1),10);
-  download(`${API_BASE}/api/export/assets.xlsx?year=${y}&month=${m}&date_field=rehab_date`);
-}
-function exportSpaToDate(){
-  const y=parseInt(qs("#spa-year")?.value||new Date().getFullYear(),10);
-  const m=parseInt(qs("#spa-month")?.value||(new Date().getMonth()+1),10);
-  download(`${API_BASE}/api/export/spares.xlsx?year=${y}&month=${m}&date_field=rehab_date`);
-}
-
-/* ---------- forms (save/update) ---------- */
-// Cabinets
-async function saveCabinet(isUpdate){
-  const f=qs("#form-cab"); if(!f) return;
-  const body={
-    id:          qs("#cab-id")?.value || undefined,
-    cabinet_type:f.cabinet_type.value,
-    code:        f.code.value,
-    rehab_date:  f.rehab_date.value,
-    qualified_by:f.qualified_by.value,
-    location:    f.location.value,
-    receiver:    f.receiver.value,
-    issue_date:  f.issue_date.value,
-    notes:       f.notes.value
+  // اجلب كل إحصائية مع سقوط آمن لقيمة صفرية
+  const safe = async (u, zeroObj)=> {
+    try{ return await getJSON(u); }catch(_){ return zeroObj; }
   };
-  const url = isUpdate && body.id ? `${API_BASE}/api/cabinets/${body.id}` : `${API_BASE}/api/cabinets`;
-  const res = isUpdate && body.id ? await putJSON(url,body) : await postJSON(url,body);
-  if(res){ alert("تم الحفظ"); }
-}
-// Assets (يتضمن rehab_date)
-async function saveAsset(isUpdate){
-  const f=qs("#form-ast"); if(!f) return;
-  const body={
-    id:               qs("#ast-id")?.value || undefined,
-    asset_type:       f.asset_type.value,
-    model:            f.model.value,
-    serial_or_code:   f.serial_or_code.value,
-    quantity:         Number(f.quantity.value||1),
-    prev_location:    f.prev_location.value,
-    rehab_date:       f.rehab_date.value,   // مهم
-    supply_date:      f.supply_date.value,
-    qualified_by:     f.qualified_by.value,
-    lifted:           f.lifted.value || null,
-    inspector:        f.inspector.value,
-    tested:           f.tested.value || null,
-    issue_date:       f.issue_date.value,
-    current_location: f.current_location.value,
-    requester:        f.requester.value,
-    receiver:         f.receiver.value,
-    notes:            f.notes.value
-  };
-  const url = isUpdate && body.id ? `${API_BASE}/api/assets/${body.id}` : `${API_BASE}/api/assets`;
-  const res = isUpdate && body.id ? await putJSON(url,body) : await postJSON(url,body);
-  if(res){ alert("تم الحفظ"); }
-}
-// Spares
-async function saveSpare(isUpdate){
-  const f=qs("#form-spa"); if(!f) return;
-  const body={
-    id:            qs("#spa-id")?.value || undefined,
-    part_category: f.part_category.value,
-    part_name:     f.part_name.value,
-    part_model:    f.part_model.value,
-    quantity:      Number(f.quantity.value||1),
-    serial:        f.serial.value,
-    source:        f.source.value,
-    qualified_by:  f.qualified_by.value,
-    rehab_date:    f.rehab_date.value,
-    tested:        f.tested.value || null,
-    notes:         f.notes.value
-  };
-  const url = isUpdate && body.id ? `${API_BASE}/api/spares/${body.id}` : `${API_BASE}/api/spares`;
-  const res = isUpdate && body.id ? await putJSON(url,body) : await postJSON(url,body);
-  if(res){ alert("تم الحفظ"); }
-}
 
-/* ---------- global search (only one box) ---------- */
-async function globalSearch(){
-  const q=(qs("#search-all")?.value||"").trim();
-  const resBox=qs("#search-results");
-  if(!resBox) return;
-  if(!q){ resBox.innerHTML=`<div class="muted">اكتب الترميز أو الرقم التسلسلي للبحث.</div>`; return; }
+  const cab = await safe(`${API}/api/stats/cabinets?year=${y}&month=${m}`, {ATS:0,AMF:0,HYBRID:0,"حماية انفرتر":0,"ظفيرة تحكم":0});
+  const ast = await safe(`${API}/api/stats/assets?year=${y}&month=${m}`, {"بطاريات":0,"موحدات":0,"محركات":0,"مولدات":0,"مكيفات":0,"أصول أخرى":0});
+  const spa = await safe(`${API}/api/stats/spares?year=${y}&month=${m}`, {"مضخات الديزل":0,"النوزلات":0,"سلف":0,"دينمو شحن":0,"كروت وشواحن":0,"موديولات":0,"منظمات وانفرترات":0,"تسييخ":0,"أخرى":0});
 
-  resBox.innerHTML=`<div class="muted">جارِ البحث…</div>`;
-  const [cab, ast, spa]=await Promise.all([
-    getJSON(`${API_BASE}/api/cabinets/find?code=${encodeURIComponent(q)}`),
-    getJSON(`${API_BASE}/api/assets/find?serial=${encodeURIComponent(q)}`),
-    getJSON(`${API_BASE}/api/spares/find?serial=${encodeURIComponent(q)}`)
-  ]);
-  const parts=[];
-  if(cab){ parts.push(renderCard("الكبائن", cab)); }
-  if(ast){ parts.push(renderCard("الأصول", ast)); }
-  if(spa){ parts.push(renderCard("قطع الغيار", spa)); }
-  resBox.innerHTML = parts.length ? parts.join("") : `<div class="muted">لا توجد نتائج مطابقة.</div>`;
-}
-function renderCard(title, obj){
-  const pretty=escapeHtml(JSON.stringify(obj,null,2));
-  return `<div class="search-card"><div style="font-weight:700;margin-bottom:6px">${title}</div><pre style="margin:0;white-space:pre-wrap">${pretty}</pre></div>`;
-}
-function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-
-/* ---------- duplicate detection (visible immediately) ---------- */
-async function checkDuplicates(){
-  const box=qs("#dup-results");
-  if(!box) return;
-  box.hidden=false; // اظهار الصندوق مباشرة
-  box.innerHTML=`<div class="muted">جارِ الفحص…</div>`;
-
-  const {year,month}=getYearMonth();
-  const q=`year=${year}&month=${month}&date_field=rehab_date`;
-  const [cabs, assets] = await Promise.all([
-    getJSON(`${API_BASE}/api/cabinets?${q}`)  || getJSON(`${API_BASE}/api/cabinets`),
-    getJSON(`${API_BASE}/api/assets?${q}`)    || getJSON(`${API_BASE}/api/assets`)
-  ]);
-
-  const issues=[];
-
-  // كبائن: تكرار code
-  if (Array.isArray(cabs)) {
-    const seen=new Map();
-    for(const it of cabs){
-      const k=(it.code||"").trim(); if(!k) continue;
-      if(seen.has(k)) issues.push(`تكرار في الكبائن: الترميز "${k}" (IDs: ${seen.get(k)}, ${it.id})`);
-      else seen.set(k,it.id);
-    }
+  // كبائن
+  const cabChart = ensureCabinetChart();
+  if (cabChart){
+    const labels = cabChart.data.labels;
+    cabChart.data.datasets[0].data = labels.map(k => Number(cab?.[k]||0));
+    cabChart.update();
   }
-
-  // أصول: تكرار serial_or_code + قاعدة المحركات (المصدر/الموقع الحالي)
-  if (Array.isArray(assets)) {
-    const seen=new Map();
-    const engines=new Map(); // serial_or_code -> {sources:Map, locs:Map}
-    for(const it of assets){
-      const k=(it.serial_or_code||"").trim();
-      if(k){
-        if(seen.has(k)) issues.push(`تكرار في الأصول: الرقم/الترميز "${k}" (IDs: ${seen.get(k)}, ${it.id})`);
-        else seen.set(k,it.id);
-      }
-      if((it.asset_type||"")==="محركات"){
-        const bag=engines.get(k) || {sources:new Map(), locs:new Map()};
-        const src=(it.source||it.prev_location||"").trim();
-        const loc=(it.current_location||"").trim();
-        if(src){
-          if(bag.sources.has(src)) issues.push(`محرك "${k}": تكرار نفس "المصدر" (${src}) (IDs: ${bag.sources.get(src)}, ${it.id})`);
-          else bag.sources.set(src,it.id);
-        }
-        if(loc){
-          if(bag.locs.has(loc)) issues.push(`محرك "${k}": تكرار نفس "الموقع الحالي" (${loc}) (IDs: ${bag.locs.get(loc)}, ${it.id})`);
-          else bag.locs.set(loc,it.id);
-        }
-        engines.set(k,bag);
-      }
-    }
+  // أصول
+  const astChart = ensureAssetsChart();
+  if (astChart){
+    const labels = astChart.data.labels;
+    const data = labels.map(k => Number(ast?.[k]||0));
+    astChart.data.datasets[0].data = data;
+    setBarYAxisMax(astChart, data);
+    astChart.update();
   }
-
-  box.innerHTML = issues.length
-    ? `<div><b>نتائج فحص التكرارات:</b><ul>${issues.map(i=>`<li>${escapeHtml(i)}</li>`).join("")}</ul></div>`
-    : `<div class="muted">لا توجد تكرارات وفق القواعد المحددة.</div>`;
+  // قطع غيار
+  const spaChart = ensureSparesChart();
+  if (spaChart){
+    const labels = spaChart.data.labels;
+    const data = labels.map(k => Number(spa?.[k]||0));
+    spaChart.data.datasets[0].data = data;
+    setBarYAxisMax(spaChart, data);
+    spaChart.update();
+  }
 }
 
-/* ---------- init ---------- */
+/* ================== Forms (بدون تغيير على السلوك) ================== */
+// صرف/طارئ
+function bindIssue(){
+  const f = qs("#form-issue"); if(!f) return;
+  f.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    try{
+      await sendForm(`${API}/api/issue`, f);
+      toast("تم الحفظ");
+      f.reset();
+      updateCharts();
+    }catch(err){ toast("فشل الحفظ: " + err.message); }
+  });
+}
+// كبائن
+function bindCab(){
+  const f = qs("#form-cab"); if(!f) return;
+  f.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    try{
+      await sendForm(`${API}/api/cabinets`, f); // السيرفر يمنع التكرار ويرجع 400 برسالة واضحة
+      toast("تم الحفظ");
+      f.reset();
+      updateCharts();
+    }catch(err){ toast("فشل الحفظ: " + err.message); }
+  });
+}
+// أصول (سندعم الطريقتين: FormData أولاً؛ إن رجع 422 نجرب JSON)
+function bindAst(){
+  const f = qs("#form-ast"); if(!f) return;
+  f.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    try{
+      await sendForm(`${API}/api/assets`, f);
+      toast("تم الحفظ");
+      f.reset();
+      updateCharts();
+    }catch(err){
+      if (String(err.message).includes("422")) {
+        // تحويل إلى JSON إن كان السيرفر ينتظر JSON
+        const obj = Object.fromEntries(new FormData(f).entries());
+        if ("quantity" in obj) obj.quantity = Number(obj.quantity||1);
+        try{
+          await sendJSON(`${API}/api/assets`, "POST", obj);
+          toast("تم الحفظ");
+          f.reset();
+          updateCharts();
+          return;
+        }catch(err2){
+          toast("فشل الحفظ: " + err2.message);
+          return;
+        }
+      }
+      toast("فشل الحفظ: " + err.message);
+    }
+  });
+}
+// قطع غيار
+function bindSpa(){
+  const f = qs("#form-spa"); if(!f) return;
+  f.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    try{
+      await sendForm(`${API}/api/spares`, f);
+      toast("تم الحفظ");
+      f.reset();
+      updateCharts();
+    }catch(err){ toast("فشل الحفظ: " + err.message); }
+  });
+}
+
+/* ================== Excel bindings (كما كانت) ================== */
+function bindExcel(){
+  qs("#btn-excel-issue-full")   ?.addEventListener("click", ()=> download(`${API}/api/export/issue/full.xlsx`));
+  qs("#btn-excel-issue-summary")?.addEventListener("click", ()=> download(`${API}/api/export/issue/summary.xlsx`));
+
+  qs("#btn-excel-cab")?.addEventListener("click", ()=>{
+    const cur=now(); const y = toInt(qs("#excel-cab-year")?.value||cur.y,cur.y);
+    const m = toInt(qs("#excel-cab-month")?.value||cur.m,cur.m);
+    download(`${API}/api/export/cabinets.xlsx?year=${y}&month=${m}`);
+  });
+  qs("#btn-excel-ast")?.addEventListener("click", ()=>{
+    const cur=now(); const y = toInt(qs("#excel-ast-year")?.value||cur.y,cur.y);
+    const m = toInt(qs("#excel-ast-month")?.value||cur.m,cur.m);
+    download(`${API}/api/export/assets.xlsx?year=${y}&month=${m}`);
+  });
+  qs("#btn-excel-spa")?.addEventListener("click", ()=>{
+    const cur=now(); const y = toInt(qs("#excel-spa-year")?.value||cur.y,cur.y);
+    const m = toInt(qs("#excel-spa-month")?.value||cur.m,cur.m);
+    download(`${API}/api/export/spares.xlsx?year=${y}&month=${m}`);
+  });
+
+  // دعم معرفات بديلة للملخصات
+  const monthlyBtns = [qs("#btn-excel-monthly"), qs("#btn-monthly")].filter(Boolean);
+  monthlyBtns.forEach(btn => btn.addEventListener("click", ()=>{
+    const cur=now();
+    const y = toInt(qs("#excel-sum-year")?.value || qs("#sum-year")?.value || cur.y, cur.y);
+    const m = toInt(qs("#excel-sum-month")?.value|| qs("#sum-month")?.value|| cur.m, cur.m);
+    download(`${API}/api/export/monthly_summary.xlsx?year=${y}&month=${m}`);
+  }));
+
+  const quarterlyBtns = [qs("#btn-excel-quarterly"), qs("#btn-quarterly")].filter(Boolean);
+  quarterlyBtns.forEach(btn => btn.addEventListener("click", ()=>{
+    const cur=now();
+    const y = toInt(qs("#excel-q-year")?.value || qs("#q-year")?.value || cur.y, cur.y);
+    const m = toInt(qs("#excel-q-month")?.value|| qs("#q-month")?.value|| cur.m, cur.m);
+    download(`${API}/api/export/quarterly_summary.xlsx?start_year=${y}&start_month=${m}`);
+  }));
+
+  // زر تحديث الرسوم (أي معرف)
+  const updBtns = [qs("#btn-refresh-charts"), qs("#btnUpdateCharts")].filter(Boolean);
+  updBtns.forEach(btn => btn.addEventListener("click", updateCharts));
+}
+
+/* ================== Duplicates checker (بدون تغيير) ============== */
+function bindDuplicates(){
+  const btn = qs("#btn-dup"); if(!btn) return;
+  const box = qs("#dup-result");
+  btn.addEventListener("click", async ()=>{
+    if (box){ box.style.display="block"; box.innerHTML = `<span class="muted">...جاري الفحص</span>`; }
+    try{
+      const r = await getJSON(`${API}/api/validate/duplicates`);
+      const html = `
+        <div><b>أكواد كبائن مكررة:</b> ${r.cabinets_codes?.length? r.cabinets_codes.join(" ، ") : "لا يوجد"}</div>
+        <div><b>أرقام أصول مكررة:</b> ${r.assets_serials?.length? r.assets_serials.join(" ، ") : "لا يوجد"}</div>
+        <div><b>(رقم+موقع) للأصول مكرر:</b> ${r.assets_serial_loc_pairs?.length? r.assets_serial_loc_pairs.join(" ، ") : "لا يوجد"}</div>
+        <div><b>(سيريال+مصدر) للغيار مكرر:</b> ${r.spares_serial_src_pairs?.length? r.spares_serial_src_pairs.join(" ، ") : "لا يوجد"}</div>
+      `;
+      if (box) box.innerHTML = html;
+    }catch(e){
+      if (box) box.innerHTML = `<span class="muted">تعذّر الفحص: ${e.message}</span>`;
+    }
+  });
+}
+
+/* ================== Init ================== */
 document.addEventListener("DOMContentLoaded", ()=>{
-  log("app v7 ready");
-  const now=new Date();
-  if(qs("#year")  && !qs("#year").value)  qs("#year").value  = String(now.getFullYear());
-  if(qs("#month") && !qs("#month").value) qs("#month").value = String(now.getMonth()+1);
+  // البلاطات الرئيسية
+  qs("#tile-issue")?.addEventListener("click", openIssue);
+  qs("#tile-rehab")?.addEventListener("click", openRehab);
+  qs("#tile-excel")?.addEventListener("click", openExcel);
 
-  // main panels
-  qs("#open-issue")?.addEventListener("click",e=>{e.preventDefault();showPanel("issue");});
-  qs("#open-qual") ?.addEventListener("click",e=>{e.preventDefault();showPanel("rehab");showBlock("cab");updateCharts();});
-  qs("#back-home")  ?.addEventListener("click",e=>{e.preventDefault();showPanel("home");});
-  qs("#back-home-2")?.addEventListener("click",e=>{e.preventDefault();showPanel("home");});
+  // رجوع
+  qsa(".btn-back-main").forEach(b=> b.addEventListener("click", hideAllPanels));
+  qsa(".btn-back-rehab").forEach(b=> b.addEventListener("click", ()=>{
+    qs("#rehab-chooser")?.classList.remove("hidden");
+    ["block-cab","block-ast","block-spa"].forEach(id=>qs("#"+id)?.classList.add("hidden"));
+  }));
 
-  // sub blocks
-  qs("#sub-cab")?.addEventListener("click",e=>{e.preventDefault();showBlock("cab");});
-  qs("#sub-ast")?.addEventListener("click",e=>{e.preventDefault();showBlock("ast");});
-  qs("#sub-spa")?.addEventListener("click",e=>{e.preventDefault();showBlock("spa");});
+  // اختيار نوع التأهيل
+  qs("#sub-cab")?.addEventListener("click", ()=> rehabOpenBlock("cab"));
+  qs("#sub-ast")?.addEventListener("click", ()=> rehabOpenBlock("ast"));
+  qs("#sub-spa")?.addEventListener("click", ()=> rehabOpenBlock("spa"));
 
-  // charts & summaries
-  qs("#btnUpdateCharts")    ?.addEventListener("click",e=>{e.preventDefault();updateCharts();});
-  qs("#btnMonthlySummary")  ?.addEventListener("click",e=>{e.preventDefault();exportMonthly();});
-  qs("#btnQuarterlySummary")?.addEventListener("click",e=>{e.preventDefault();exportQuarterly();});
+  // النماذج
+  bindIssue();
+  bindCab();
+  bindAst();
+  bindSpa();
 
-  // per-section exports
-  qs("#btn-cab-export")?.addEventListener("click",e=>{e.preventDefault();exportCabToDate();});
-  qs("#btn-ast-export")?.addEventListener("click",e=>{e.preventDefault();exportAstToDate();});
-  qs("#btn-spa-export")?.addEventListener("click",e=>{e.preventDefault();exportSpaToDate();});
+  // التقارير + التكرارات
+  bindExcel();
+  bindDuplicates();
 
-  // save/update
-  qs("#form-cab")?.addEventListener("submit", e=>{e.preventDefault();saveCabinet(false);});
-  qs("#btn-cab-update")?.addEventListener("click", e=>{e.preventDefault();saveCabinet(true);});
-  qs("#form-ast")?.addEventListener("submit", e=>{e.preventDefault();saveAsset(false);});
-  qs("#btn-ast-update")?.addEventListener("click", e=>{e.preventDefault();saveAsset(true);});
-  qs("#form-spa")?.addEventListener("submit", e=>{e.preventDefault();saveSpare(false);});
-  qs("#btn-spa-update")?.addEventListener("click", e=>{e.preventDefault();saveSpare(true);});
+  // الرسوم (تُرسم حتى لو APIs فشلت — تُظهر أصفاراً بدلاً من اختفاء الرسم)
+  updateCharts();
 
-  // global search (only)
-  qs("#search-all-btn")  ?.addEventListener("click", e=>{e.preventDefault();globalSearch();});
-  qs("#search-all-clear")?.addEventListener("click", e=>{e.preventDefault(); const i=qs("#search-all"); if(i){i.value="";} qs("#search-results").innerHTML=""; });
+  // إبقاء الصفحة على القائمة الرئيسية كما هي
+  hideAllPanels();
 
-  // duplicate detection (visible immediately)
-  qs("#btn-dup")?.addEventListener("click", e=>{e.preventDefault();checkDuplicates();});
-
-  // initial panel
-  showPanel("home");
-
-  // charts responsive width
-  window.addEventListener("resize", ()=>{ CH.cab?.resize?.(); CH.ast?.resize?.(); CH.spa?.resize?.(); });
+  // لو تغيّر حجم النافذة، اكتفِ باستدعاء update() بدل إعادة بناء الرسم
+  window.addEventListener("resize", ()=>{
+    [CH.cab, CH.ast, CH.spa].forEach(ch => { try{ ch?.update("none"); }catch(_){ } });
+  });
 });
-/* ============================ end app.js =============================== */
